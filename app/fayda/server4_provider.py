@@ -318,7 +318,15 @@ class Server4Provider(FaydaProvider):
                                    headers=_backend_headers(token or None), json=cb_body) as r:
                     user = await r.json(content_type=None)
             pdf_bytes, name = pdf_render.render(user)
-            return ok(pdf=pdf_bytes, filename=f"{name}.pdf")
+            # Screenshots (front/back/photo-qr) are best-effort — a failure here must
+            # NEVER stop the PDF from being delivered.
+            shots = []
+            try:
+                from . import screenshot_render
+                shots = screenshot_render.render(user)
+            except Exception as e:
+                print("[screenshot_render]", e)
+            return ok(pdf=pdf_bytes, filename=f"{name}.pdf", screenshots=shots)
         except Exception as e:
             return err(f"Server-4 verify failed: {e}")
         finally:

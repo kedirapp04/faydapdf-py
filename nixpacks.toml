@@ -1,0 +1,5 @@
+# Railway/Nixpacks build config.
+# Installs the tesseract OCR binary so the Telebirr-screenshot reader works
+# (pytesseract needs it). "..." keeps Nixpacks' default apt packages.
+[phases.setup]
+aptPkgs = ["...", "tesseract-ocr"]

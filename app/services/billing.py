@@ -4,7 +4,7 @@ Money is cents everywhere. `charge_and_log` logs the download AND moves money fo
 the user's billing mode in ONE transaction, so a download can never be delivered
 without being accounted for (or vice-versa)."""
 from ..db import pool
-from .. import config
+from .. import config, i18n
 from ..repo import wallet
 from ..repo import settings as settings_repo
 
@@ -43,20 +43,19 @@ async def can_download(user: dict) -> tuple[bool, str, int]:
     mode = user["billing_mode"]
     if mode == "prepaid":
         if user["balance_cents"] < price:
-            return False, f"Insufficient balance (need {birr(price)}, have {birr(user['balance_cents'])}). Please top up.", price
+            return False, i18n.t("reason_insufficient", need=birr(price), have=birr(user["balance_cents"])), price
     elif mode == "postpaid":
-        if user["credit_limit_cents"] <= 0:
-            return False, "No postpaid credit assigned. Contact admin.", price
-        if user["owed_cents"] + price > user["credit_limit_cents"]:
-            return False, "Postpaid credit limit reached.", price
+        purchasing_power = user["balance_cents"] + user["credit_limit_cents"] - user["owed_cents"]
+        if purchasing_power < price:
+            return False, i18n.t("reason_postpaid_limit", need=birr(price)), price
     else:  # counter
         uid = user["telegram_id"]
         if user["total_limit"] > 0:
             total = await pool().fetchval("SELECT count(*)::int FROM downloads WHERE user_id=$1", uid)
             if total >= user["total_limit"]:
-                return False, "Total limit reached for this account.", price
+                return False, i18n.t("reason_total_limit"), price
         if user["daily_limit"] > 0 and await today_count(uid) >= user["daily_limit"]:
-            return False, "Daily limit reached. Try again tomorrow.", price
+            return False, i18n.t("reason_daily_limit"), price
     return True, "", price
 
 
@@ -72,7 +71,7 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
                 "INSERT INTO downloads (user_id, fan_hash, format, cost_cents) VALUES ($1,$2,$3,$4) RETURNING id",
                 user_id, fan_hash, fmt, price_cents,
             )
-            if price_cents > 0 and mode == "prepaid":
+            if price_cents > 0 and mode in ("prepaid", "postpaid"):
                 # Lock the row and read the live balance; another device may have
                 # spent since the pre-flight gate. Debit up to the balance, no more.
                 row = await conn.fetchrow(
@@ -88,9 +87,4 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
                         "UPDATE users SET owed_cents = owed_cents + $1, updated_at=now() WHERE telegram_id=$2",
                         shortfall, user_id,
                     )
-            elif price_cents > 0 and mode == "postpaid":
-                await conn.execute(
-                    "UPDATE users SET owed_cents = owed_cents + $1, updated_at=now() WHERE telegram_id=$2",
-                    price_cents, user_id,
-                )
             # counter: no money movement

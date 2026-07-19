@@ -19,7 +19,7 @@ import logging
 import uvicorn
 
 from . import config, web
-from .db import init_pool, close_pool
+from .db import init_pool, close_pool, health_loop
 from .main import run_bot
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -56,6 +56,7 @@ async def _supervise(name: str, factory) -> None:
 async def main() -> None:
     await init_pool()
     log.info("DB pool ready. Web admin on %s:%s", config.WEB_HOST, config.WEB_PORT)
+    asyncio.create_task(health_loop())  # DB-down recovery monitor
     try:
         # Neither supervisor returns; if one is cancelled (shutdown) the other is too.
         await asyncio.gather(_supervise("bot", run_bot), _supervise("web", _run_web))

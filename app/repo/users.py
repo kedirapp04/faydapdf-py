@@ -41,6 +41,12 @@ async def set_vip(user_id, is_vip: bool) -> None:
     await pool().execute("UPDATE users SET is_vip=$1, updated_at=now() WHERE telegram_id=$2", is_vip, int(user_id))
 
 
+async def set_delivery_pref(user_id, pref: str) -> None:
+    if pref not in ("both", "pdf", "screenshot"):
+        pref = "both"
+    await pool().execute("UPDATE users SET delivery_pref=$1, updated_at=now() WHERE telegram_id=$2", pref, int(user_id))
+
+
 async def set_credit_limit(user_id, cents: int) -> None:
     await pool().execute("UPDATE users SET credit_limit_cents=$1, updated_at=now() WHERE telegram_id=$2", max(0, cents), int(user_id))
 

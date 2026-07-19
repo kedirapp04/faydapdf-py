@@ -16,7 +16,10 @@ def _make(mode: str):
 
 
 async def active_mode() -> str:
-    mode = await settings_repo.get("fayda_mode", config.FAYDA_MODE_DEFAULT)
+    try:
+        mode = await settings_repo.get("fayda_mode", config.FAYDA_MODE_DEFAULT)
+    except Exception:
+        mode = config.FAYDA_MODE_DEFAULT   # DB down → fall back to the env default
     return "server4" if mode == "server4" else "api"
 
 

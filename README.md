@@ -178,14 +178,19 @@ Postgres on your VPS.
 - **Web admin dashboard** (live) — stats, users, payments, settings
 - Forgot-FAN, pause, Fayda-mode switch
 
+- **Get PDF / Get Screenshot** — the user picks (reply-keyboard buttons); a bare
+  FIN/FAN gives both. Screenshots = **front + back cards + photo/QR composite**
+  (Server-4 mode), exactly like faydapdf-railway.
+
 **Native Server-4 mode — code-complete:** the whole flow is ported to Python —
 fresh single-use pool token → eSignet (authorize → oauth-details → send-OTP →
-authenticate → auth-code) → backend callback → in-process PDF render (reportlab,
-smoke-tested with photo/QR/fields). Switch to it live from the Admin panel (*Mode*)
-or set `FAYDA_MODE_DEFAULT=server4`.
+authenticate → auth-code) → backend callback → **PDF stamped onto the official Fayda
+template** (`pdf_render` ports faydapdf-railway/pdfGenerator.js: exact coordinates +
+bundled Nyala/Barlow fonts, no download) plus the front/back/photo-QR screenshots.
+Switch to it live from the Admin panel (*Mode*) or set `FAYDA_MODE_DEFAULT=server4`.
 
-> ⚠️ **Needs one live pass.** The eSignet request/header shapes and the PDF card
-> layout were ported from `faydapdf-railway` but can only be *confirmed* against a
+> ⚠️ **Needs one live pass.** The eSignet request/header shapes were ported from
+> `faydapdf-railway` but can only be *confirmed* against a
 > real pool token + the Fayda backend. Do the first `server4` download with an admin
 > account watching logs; keep `api` as the instant fallback if anything is off. The
 > PDF is a clean, correct document — refine the exact card layout against a real

@@ -24,18 +24,30 @@ async def _apply(conn: asyncpg.Connection, user_id: int, kind: str, amount_cents
     if amount_cents < 0:
         raise ValueError("amount must be positive")
     row = await conn.fetchrow(
-        "SELECT balance_cents FROM users WHERE telegram_id=$1 FOR UPDATE", user_id
+        "SELECT balance_cents, owed_cents FROM users WHERE telegram_id=$1 FOR UPDATE", user_id
     )
     if row is None:
         raise ValueError(f"user {user_id} not found")
-    delta = amount_cents if kind == "credit" else -amount_cents
-    new_balance = row["balance_cents"] + delta
+        
+    new_balance = row["balance_cents"]
+    new_owed = row["owed_cents"]
+    
+    if kind == "credit":
+        # Pay off any debt first
+        pay_debt = min(new_owed, amount_cents)
+        new_owed -= pay_debt
+        leftover = amount_cents - pay_debt
+        new_balance += leftover
+    else:
+        new_balance -= amount_cents
+        
     if new_balance < 0:
         # Safety net: never let a debit make the cached balance negative.
         raise InsufficientFunds(f"user {user_id}: balance {row['balance_cents']} < debit {amount_cents}")
+        
     await conn.execute(
-        "UPDATE users SET balance_cents=$1, updated_at=now() WHERE telegram_id=$2",
-        new_balance, user_id,
+        "UPDATE users SET balance_cents=$1, owed_cents=$2, updated_at=now() WHERE telegram_id=$3",
+        new_balance, new_owed, user_id,
     )
     await conn.execute(
         """INSERT INTO wallet_ledger

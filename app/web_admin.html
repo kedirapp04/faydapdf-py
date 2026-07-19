@@ -5,65 +5,148 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>faydapdf-py · Admin</title>
 <style>
-  :root{
-    --bg:#0b0f17; --panel:#141b28; --panel2:#0f1622; --line:#233047; --txt:#e7edf6;
-    --mut:#8ba0bd; --ac:#4f8cff; --ac2:#22c55e; --err:#ff5a6a; --warn:#f6c343; --chip:#1d2942;
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  :root {
+    --bg: #0f111a;
+    --panel-bg: rgba(25, 28, 41, 0.6);
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --line: rgba(255, 255, 255, 0.08);
+    --txt: #f1f5f9;
+    --mut: #94a3b8;
+    --ac: #6366f1;
+    --ac-hover: #4f46e5;
+    --ac2: #10b981;
+    --err: #ef4444;
+    --warn: #f59e0b;
+    --chip: rgba(255, 255, 255, 0.05);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   }
-  *{box-sizing:border-box}
-  body{margin:0;font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
-  a{color:var(--ac)}
-  .wrap{max-width:1080px;margin:0 auto;padding:18px 14px 60px}
-  h1{font-size:18px;margin:0;display:flex;align-items:center;gap:10px}
-  .live{width:9px;height:9px;border-radius:50%;background:var(--ac2);box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:pulse 2s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
-  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-  .btn{background:var(--ac);color:#fff;border:0;border-radius:9px;padding:8px 13px;font:inherit;font-weight:600;cursor:pointer}
-  .btn.sec{background:var(--chip);color:var(--txt)}
-  .btn.warn{background:#3a2d13;color:var(--warn)}
-  .btn.err{background:#3a1720;color:var(--err)}
-  .btn:disabled{opacity:.5;cursor:default}
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px}
-  .card .k{color:var(--mut);font-size:12px}
-  .card .v{font-size:22px;font-weight:700;margin-top:3px}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px}
-  .panel h2{font-size:14px;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font:inherit}
-  input.sm{width:90px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
-  th{color:var(--mut);font-weight:600;font-size:12px}
-  .tag{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--chip);color:var(--mut)}
-  .tag.ok{background:#12331f;color:#7ee2a8}.tag.bad{background:#3a1720;color:#ff98a3}.tag.vip{background:#332a12;color:var(--warn)}
-  .muted{color:var(--mut)}
-  .scroll{overflow-x:auto}
-  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#0f1622;border:1px solid var(--line);border-radius:10px;padding:10px 16px;opacity:0;transition:.2s;pointer-events:none}
-  .toast.show{opacity:1}
-  .toast.err{border-color:var(--err);color:#ff98a3}
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--txt);
+    background-image: radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 400px),
+                      radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.05), transparent 400px);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  a { color: var(--ac); text-decoration: none; transition: 0.2s; }
+  a:hover { color: var(--ac-hover); }
+  
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 12px; letter-spacing: -0.02em; }
+  
+  .live {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--ac2);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+  
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  
+  .btn {
+    background: var(--ac); color: #fff; border: 0; border-radius: 8px;
+    padding: 8px 16px; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .btn:hover:not(:disabled) { background: var(--ac-hover); transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0,0,0,0.15); }
+  .btn:active:not(:disabled) { transform: translateY(0); }
+  .btn.sec { background: var(--chip); color: var(--txt); border: 1px solid var(--line); box-shadow: none; }
+  .btn.sec:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
+  .btn.warn { background: rgba(245, 158, 11, 0.15); color: var(--warn); border: 1px solid rgba(245, 158, 11, 0.3); }
+  .btn.warn:hover:not(:disabled) { background: rgba(245, 158, 11, 0.25); }
+  .btn.err { background: rgba(239, 68, 68, 0.15); color: var(--err); border: 1px solid rgba(239, 68, 68, 0.3); }
+  .btn.err:hover:not(:disabled) { background: rgba(239, 68, 68, 0.25); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card {
+    background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px;
+    box-shadow: var(--glass-shadow); transition: transform 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); }
+  .card .k { color: var(--mut); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .card .v { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  
+  .panel {
+    background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--panel-border); border-radius: 16px; padding: 20px; margin-bottom: 24px;
+    box-shadow: var(--glass-shadow);
+  }
+  .panel h2 { font-size: 15px; font-weight: 600; margin: 0 0 16px; display: flex; align-items: center; justify-content: space-between; }
+  
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  
+  input, select {
+    background: rgba(0,0,0,0.2); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 8px; padding: 8px 12px; font-family: inherit; font-size: 13px;
+    transition: all 0.2s; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--ac); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+  input.sm { width: 100px; }
+  
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  th, td { text-align: left; padding: 12px; vertical-align: middle; border-bottom: 1px solid var(--line); }
+  th { color: var(--mut); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; cursor: pointer; user-select: none; transition: color 0.2s; }
+  th:hover { color: var(--txt); }
+  th.sort-asc::after { content: " ↑"; opacity: 0.7; }
+  th.sort-desc::after { content: " ↓"; opacity: 0.7; }
+  tbody tr { transition: background 0.2s; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  
+  .tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; background: var(--chip); color: var(--mut); display: inline-block; }
+  .tag.ok { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+  .tag.bad { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+  .tag.vip { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+  
+  .muted { color: var(--mut); }
+  .scroll { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,0.1); }
+  
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 20px;
+    font-weight: 500; font-size: 14px; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { border-left: 4px solid var(--err); }
+  .toast.ok { border-left: 4px solid var(--ac2); }
+  
   /* login */
-  #login{max-width:360px;margin:14vh auto;text-align:center}
-  #login input{width:100%;margin:12px 0;padding:11px}
-  .hide{display:none}
-  .pager{display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:10px}
-  details.u summary{cursor:pointer;list-style:none}
-  details.u summary::-webkit-details-marker{display:none}
+  #login { max-width: 380px; margin: 15vh auto; text-align: center; background: var(--panel-bg); backdrop-filter: blur(12px); padding: 32px; border-radius: 20px; border: 1px solid var(--panel-border); box-shadow: var(--glass-shadow); }
+  #login h1 { justify-content: center; margin-bottom: 24px; font-size: 24px; }
+  #login input { width: 100%; margin: 0 0 16px; padding: 12px; font-size: 15px; }
+  #login .btn { padding: 12px; font-size: 15px; width: 100%; }
+  
+  .hide { display: none; }
+  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 16px; }
+  details.u summary { cursor: pointer; list-style: none; display: inline-block; }
+  details.u summary::-webkit-details-marker { display: none; }
 </style>
 </head>
 <body>
 
 <!-- Login -->
 <div id="login">
-  <h1 style="justify-content:center">🛠 faydapdf-py admin</h1>
+  <h1>🛠 faydapdf-py admin</h1>
   <input id="pw" type="password" placeholder="Admin password" onkeydown="if(event.key==='Enter')doLogin()" />
-  <button class="btn" style="width:100%" onclick="doLogin()">Sign in</button>
-  <div id="loginErr" class="muted" style="margin-top:10px;color:var(--err)"></div>
+  <button class="btn" onclick="doLogin()">Sign in</button>
+  <div id="loginErr" class="muted" style="margin-top: 16px; color: var(--err); font-size: 13px;"></div>
 </div>
 
 <!-- Dashboard -->
 <div id="dash" class="wrap hide">
   <div class="top">
-    <h1><span class="live" id="liveDot"></span> faydapdf-py <span class="muted" style="font-size:12px">admin</span></h1>
+    <h1><span class="live" id="liveDot"></span> faydapdf-py <span class="muted" style="font-size: 14px; font-weight: 500;">admin</span></h1>
     <button class="btn sec" onclick="logout()">Logout</button>
   </div>
 
@@ -74,21 +157,31 @@
     <div class="row">
       <span class="muted">Fayda mode:</span>
       <button class="btn sec" id="modeBtn" onclick="toggleMode()">…</button>
-      <span class="muted" style="margin-left:10px">Service:</span>
+      <span class="muted" style="margin-left: 16px">Service:</span>
       <button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
-      <span class="muted" style="margin-left:10px">Global price (Birr):</span>
+      <span class="muted" style="margin-left: 16px">Global price (Birr):</span>
       <input class="sm" id="gprice" type="number" step="0.01" min="0" />
       <button class="btn" onclick="saveGprice()">Save</button>
     </div>
-    <div style="border-top:1px solid var(--line);margin:12px 0 10px"></div>
-    <div class="muted" style="margin-bottom:8px">💳 Payment accounts — shown to users & used to auto-verify receipts</div>
-    <div class="row" style="margin-bottom:8px">
-      <span class="muted" style="width:64px">Telebirr</span>
+    <div class="row" style="margin-top: 12px">
+      <span class="muted">Database:</span>
+      <span id="dbStat" class="tag">…</span>
+      <span class="muted" style="margin-left: 16px">When DB is down:</span>
+      <select id="dbPolicy" onchange="saveDbPolicy()">
+        <option value="refuse">Refuse (block users)</option>
+        <option value="free">Serve downloads free</option>
+        <option value="fallback">Serve free (fallback)</option>
+      </select>
+    </div>
+    <div style="border-top: 1px solid var(--line); margin: 16px 0"></div>
+    <div class="muted" style="margin-bottom: 12px; font-size: 13px;">💳 Payment accounts — shown to users & used to auto-verify receipts</div>
+    <div class="row" style="margin-bottom: 12px">
+      <span class="muted" style="width: 70px; font-weight: 500;">Telebirr</span>
       <input id="tb_name" placeholder="Receiver name" />
       <input id="tb_acct" placeholder="Account / phone" />
     </div>
-    <div class="row" style="margin-bottom:8px">
-      <span class="muted" style="width:64px">CBE</span>
+    <div class="row" style="margin-bottom: 16px">
+      <span class="muted" style="width: 70px; font-weight: 500;">CBE</span>
       <input id="cbe_name" placeholder="Receiver name" />
       <input id="cbe_acct" placeholder="Account number" />
     </div>
@@ -97,31 +190,61 @@
 
   <div class="panel">
     <h2>💳 Pending payments <span class="tag" id="payCount">0</span></h2>
-    <div class="scroll"><table id="payTbl"><thead>
-      <tr><th>#</th><th>User</th><th>Receipt</th><th>Bank</th><th>Amount (Birr)</th><th></th></tr>
-    </thead><tbody></tbody></table></div>
+    <div class="scroll">
+      <table id="payTbl">
+        <thead>
+          <tr>
+            <th data-col="id" onclick="sortPay('id')">#</th>
+            <th data-col="user_id" onclick="sortPay('user_id')">User</th>
+            <th data-col="receipt_id" onclick="sortPay('receipt_id')">Receipt</th>
+            <th data-col="bank" onclick="sortPay('bank')">Bank</th>
+            <th data-col="amount_cents" onclick="sortPay('amount_cents')">Amount (Birr)</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="panel">
     <h2>👥 Users</h2>
-    <div class="row" style="margin-bottom:10px">
-      <input id="q" placeholder="Search username or id…" onkeydown="if(event.key==='Enter')loadUsers(1)" />
+    <div class="row" style="margin-bottom: 16px">
+      <input id="q" placeholder="Search username or id…" onkeydown="if(event.key==='Enter')loadUsers(1)" style="flex: 1; min-width: 200px;" />
       <select id="statusF" onchange="loadUsers(1)">
-        <option value="">All statuses</option><option value="active">active</option>
-        <option value="blocked">blocked</option><option value="pending">pending</option>
+        <option value="">All statuses</option>
+        <option value="active">active</option>
+        <option value="blocked">blocked</option>
+        <option value="pending">pending</option>
       </select>
       <select id="vipF" onchange="loadUsers(1)">
-        <option value="">All users</option><option value="1">VIP only</option><option value="0">Non-VIP</option>
+        <option value="">All users</option>
+        <option value="1">VIP only</option>
+        <option value="0">Non-VIP</option>
       </select>
       <select id="modeF" onchange="loadUsers(1)">
-        <option value="">All modes</option><option value="counter">counter</option>
-        <option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
+        <option value="">All modes</option>
+        <option value="counter">counter</option>
+        <option value="prepaid">prepaid</option>
+        <option value="postpaid">postpaid</option>
       </select>
       <button class="btn" onclick="loadUsers(1)">Search</button>
     </div>
-    <div class="scroll"><table id="usrTbl"><thead>
-      <tr><th>User</th><th>Status</th><th>Mode</th><th>Balance</th><th>Price</th><th>Actions</th></tr>
-    </thead><tbody></tbody></table></div>
+    <div class="scroll">
+      <table id="usrTbl">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Status</th>
+            <th>Mode</th>
+            <th>Balance</th>
+            <th>Price</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <div class="pager" id="pager"></div>
   </div>
 </div>
@@ -129,149 +252,212 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const $=(s,r=document)=>r.querySelector(s);
-let USERS_PAGE=1;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => r.querySelectorAll(s);
 
-function toast(msg,err){const t=$("#toast");t.textContent=msg;t.className="toast show"+(err?" err":"");setTimeout(()=>t.className="toast",1800);}
-function birr(c){return (Number(c||0)/100).toLocaleString(undefined,{maximumFractionDigits:2})+" Birr";}
-function who(id,u){return u?("@"+u):("#"+id);}
+let USERS_PAGE = 1;
+let RAW_PAYMENTS = [];
+let PAY_SORT_COL = 'id';
+let PAY_SORT_ASC = true;
 
-async function api(path,opts){
-  const r=await fetch(path,{headers:{"Content-Type":"application/json"},...opts});
-  if(r.status===401){showLogin();throw new Error("unauthorized");}
-  if(!r.ok){let m=r.status;try{m=(await r.json()).detail||m;}catch{}throw new Error(m);}
-  return r.status===204?null:r.json();
+function toast(msg, err = false) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.className = "toast show" + (err ? " err" : " ok");
+  setTimeout(() => t.className = "toast", 3000);
+}
+function birr(c) { return (Number(c || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " Birr"; }
+function who(id, u) { return u ? ("@" + u) : ("#" + id); }
+
+async function api(path, opts) {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  if (r.status === 401) { showLogin(); throw new Error("unauthorized"); }
+  if (!r.ok) { let m = r.status; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  return r.status === 204 ? null : r.json();
 }
 
-function showLogin(){$("#login").classList.remove("hide");$("#dash").classList.add("hide");stopLive();}
-function showDash(){$("#login").classList.add("hide");$("#dash").classList.remove("hide");startLive();loadUsers(1);}
+function showLogin() { $("#login").classList.remove("hide"); $("#dash").classList.add("hide"); stopLive(); }
+function showDash() { $("#login").classList.add("hide"); $("#dash").classList.remove("hide"); startLive(); loadUsers(1); }
 
-async function doLogin(){
-  $("#loginErr").textContent="";
-  try{await api("/api/login",{method:"POST",body:JSON.stringify({password:$("#pw").value})});showDash();}
-  catch(e){$("#loginErr").textContent="Wrong password.";}
+async function doLogin() {
+  $("#loginErr").textContent = "";
+  try { await api("/api/login", { method: "POST", body: JSON.stringify({ password: $("#pw").value }) }); showDash(); }
+  catch (e) { $("#loginErr").textContent = "Wrong password."; }
 }
-async function logout(){try{await api("/api/logout",{method:"POST"});}catch{}showLogin();}
+async function logout() { try { await api("/api/logout", { method: "POST" }); } catch {} showLogin(); }
 
 // ── live stats + payments ──
-let liveTimer=null;
-function startLive(){refresh();liveTimer=setInterval(refresh,5000);}
-function stopLive(){if(liveTimer)clearInterval(liveTimer);liveTimer=null;}
+let liveTimer = null;
+function startLive() { refresh(); liveTimer = setInterval(refresh, 5000); }
+function stopLive() { if (liveTimer) clearInterval(liveTimer); liveTimer = null; }
 
-async function refresh(){
-  try{
-    const s=await api("/api/stats");
+async function refresh() {
+  try {
+    const s = await api("/api/stats");
     renderCards(s); renderSettings(s);
-    const p=await api("/api/payments"); renderPayments(p.payments);
-    $("#liveDot").style.background="var(--ac2)";
-  }catch(e){$("#liveDot").style.background="var(--err)";}
+    const p = await api("/api/payments");
+    RAW_PAYMENTS = p.payments || [];
+    renderPayments();
+    $("#liveDot").style.background = "var(--ac2)";
+    $("#liveDot").style.boxShadow = "0 0 0 0 rgba(16, 185, 129, 0.6)";
+  } catch (e) {
+    $("#liveDot").style.background = "var(--err)";
+    $("#liveDot").style.boxShadow = "0 0 0 0 rgba(239, 68, 68, 0.6)";
+  }
 }
 
-function renderCards(s){
-  const items=[
-    ["Users",s.users],["Active",s.active],["Blocked",s.blocked],["VIP",s.vip],
-    ["Pending pay",s.pending_payments],["Downloads today",s.downloads_today],
-    ["Downloads total",s.downloads_total],["Total balance",birr(s.balance_cents)],
-    ["Top-ups today",birr(s.topups_today_cents)],
+function renderCards(s) {
+  const items = [
+    ["Users", s.users], ["Active", s.active], ["Blocked", s.blocked], ["VIP", s.vip],
+    ["Pending pay", s.pending_payments], ["Downloads today", s.downloads_today],
+    ["Downloads total", s.downloads_total], ["Total balance", birr(s.balance_cents)],
+    ["Top-ups today", birr(s.topups_today_cents)],
   ];
-  $("#cards").innerHTML=items.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
-}
-function renderSettings(s){
-  $("#modeBtn").textContent=s.mode==="server4"?"Server-4":"API";
-  $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
-  $("#pauseBtn").className="btn "+(s.paused?"warn":"sec");
-  if(document.activeElement!==$("#gprice")) $("#gprice").value=(Number(s.global_price_cents||0)/100);
-  const a=s.accounts||{}, tb=a.telebirr||{}, cb=a.cbe||{};
-  const set=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||"";};
-  set("#tb_name",tb.name); set("#tb_acct",tb.account); set("#cbe_name",cb.name); set("#cbe_acct",cb.account);
-}
-async function toggleMode(){const s=await api("/api/stats");const nm=s.mode==="api"?"server4":"api";await api("/api/settings",{method:"POST",body:JSON.stringify({mode:nm})});toast("Mode → "+nm);refresh();}
-async function togglePause(){const s=await api("/api/stats");await api("/api/settings",{method:"POST",body:JSON.stringify({paused:!s.paused})});refresh();}
-async function saveGprice(){await api("/api/settings",{method:"POST",body:JSON.stringify({global_price_birr:$("#gprice").value})});toast("Saved");refresh();}
-async function saveAccounts(){
-  await api("/api/settings",{method:"POST",body:JSON.stringify({
-    telebirr_name:$("#tb_name").value, telebirr_account:$("#tb_acct").value,
-    cbe_name:$("#cbe_name").value, cbe_account:$("#cbe_acct").value,
-  })});
-  toast("Accounts saved");refresh();
+  $("#cards").innerHTML = items.map(([k, v]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 }
 
-function renderPayments(rows){
-  $("#payCount").textContent=rows.length;
-  const tb=$("#payTbl tbody");
-  if(!rows.length){tb.innerHTML=`<tr><td colspan="6" class="muted">No pending payments.</td></tr>`;return;}
-  tb.innerHTML=rows.map(p=>`<tr>
-    <td>#${p.id}</td><td>#${p.user_id}</td><td>${p.receipt_id}</td><td>${p.bank}</td>
-    <td><input class="sm" id="amt${p.id}" type="number" step="0.01" min="0" placeholder="0.00"></td>
+function renderSettings(s) {
+  $("#modeBtn").textContent = s.mode === "server4" ? "Server-4" : "API";
+  $("#pauseBtn").textContent = s.paused ? "⏸ Paused (resume)" : "▶ Running (pause)";
+  $("#pauseBtn").className = "btn " + (s.paused ? "warn" : "sec");
+  if (document.activeElement !== $("#gprice")) $("#gprice").value = (Number(s.global_price_cents || 0) / 100);
+  const a = s.accounts || {}, tb = a.telebirr || {}, cb = a.cbe || {};
+  const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v || ""; };
+  set("#tb_name", tb.name); set("#tb_acct", tb.account); set("#cbe_name", cb.name); set("#cbe_acct", cb.account);
+  const dbEl = $("#dbStat");
+  if (dbEl) { dbEl.textContent = s.db_ready ? "✅ up" : "⚠️ DOWN"; dbEl.className = "tag " + (s.db_ready ? "ok" : "bad"); }
+  if (document.activeElement !== $("#dbPolicy") && s.db_down_policy) $("#dbPolicy").value = s.db_down_policy;
+}
+
+async function toggleMode() { const s = await api("/api/stats"); const nm = s.mode === "api" ? "server4" : "api"; await api("/api/settings", { method: "POST", body: JSON.stringify({ mode: nm }) }); toast("Mode → " + nm); refresh(); }
+async function togglePause() { const s = await api("/api/stats"); await api("/api/settings", { method: "POST", body: JSON.stringify({ paused: !s.paused }) }); refresh(); }
+async function saveGprice() { await api("/api/settings", { method: "POST", body: JSON.stringify({ global_price_birr: $("#gprice").value }) }); toast("Global price saved"); refresh(); }
+async function saveDbPolicy() { await api("/api/settings", { method: "POST", body: JSON.stringify({ db_down_policy: $("#dbPolicy").value }) }); toast("DB-down policy saved"); refresh(); }
+async function saveAccounts() {
+  await api("/api/settings", { method: "POST", body: JSON.stringify({
+    telebirr_name: $("#tb_name").value, telebirr_account: $("#tb_acct").value,
+    cbe_name: $("#cbe_name").value, cbe_account: $("#cbe_acct").value,
+  }) });
+  toast("Payment accounts saved"); refresh();
+}
+
+// ── Payments & Sorting ──
+function sortPay(col) {
+  if (PAY_SORT_COL === col) PAY_SORT_ASC = !PAY_SORT_ASC;
+  else { PAY_SORT_COL = col; PAY_SORT_ASC = true; }
+  renderPayments();
+}
+
+function renderPayments() {
+  let rows = [...RAW_PAYMENTS];
+  $("#payCount").textContent = rows.length;
+  
+  rows.sort((a, b) => {
+    let va = a[PAY_SORT_COL], vb = b[PAY_SORT_COL];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return PAY_SORT_ASC ? -1 : 1;
+    if (va > vb) return PAY_SORT_ASC ? 1 : -1;
+    return 0;
+  });
+
+  const headers = $$("#payTbl th[data-col]");
+  headers.forEach(h => {
+    h.classList.remove("sort-asc", "sort-desc");
+    if (h.getAttribute("data-col") === PAY_SORT_COL) h.classList.add(PAY_SORT_ASC ? "sort-asc" : "sort-desc");
+  });
+
+  const tb = $("#payTbl tbody");
+  if (!rows.length) { tb.innerHTML = `<tr><td colspan="6" class="muted">No pending payments.</td></tr>`; return; }
+  tb.innerHTML = rows.map(p => `<tr>
+    <td style="font-family: monospace; color: var(--mut)">#${p.id}</td>
+    <td><span class="tag">#${p.user_id}</span></td>
+    <td style="font-family: monospace;">${p.receipt_id}</td>
+    <td><span class="tag ${p.bank==='telebirr'?'vip':''}">${p.bank}</span></td>
+    <td><input class="sm" id="amt${p.id}" type="number" step="0.01" min="0" placeholder="0.00" style="width: 80px;"></td>
     <td class="row">
       <button class="btn" onclick="approve(${p.id})">Approve</button>
       <button class="btn err" onclick="reject(${p.id})">Reject</button>
     </td></tr>`).join("");
 }
-async function approve(id){
-  const amt=$("#amt"+id).value;
-  if(!amt||Number(amt)<=0)return toast("Enter an amount",true);
-  try{const r=await api("/api/payments/"+id+"/approve",{method:"POST",body:JSON.stringify({amount_birr:amt})});
-    toast("Approved "+birr(r.amount_cents));refresh();}
-  catch(e){toast("Approve failed: "+e.message,true);}
+
+async function approve(id) {
+  const amt = $("#amt" + id).value;
+  if (!amt || Number(amt) <= 0) return toast("Enter an amount", true);
+  try {
+    const r = await api("/api/payments/" + id + "/approve", { method: "POST", body: JSON.stringify({ amount_birr: amt }) });
+    toast("Approved " + birr(r.amount_cents)); refresh();
+  } catch (e) { toast("Approve failed: " + e.message, true); }
 }
-async function reject(id){
-  try{await api("/api/payments/"+id+"/reject",{method:"POST"});toast("Rejected");refresh();}
-  catch(e){toast("Reject failed: "+e.message,true);}
+
+async function reject(id) {
+  try { await api("/api/payments/" + id + "/reject", { method: "POST" }); toast("Rejected payment #" + id); refresh(); }
+  catch (e) { toast("Reject failed: " + e.message, true); }
 }
 
 // ── users ──
-async function loadUsers(page){
-  USERS_PAGE=page||USERS_PAGE;
-  const q=encodeURIComponent($("#q").value.trim());const st=$("#statusF").value;
-  const vip=$("#vipF").value;const mode=$("#modeF").value;
-  const d=await api(`/api/users?page=${USERS_PAGE}&q=${q}&status=${st}&vip=${vip}&mode=${mode}`);
-  const tb=$("#usrTbl tbody");
-  if(!d.users.length){tb.innerHTML=`<tr><td colspan="6" class="muted">No users.</td></tr>`;$("#pager").innerHTML="";return;}
-  tb.innerHTML=d.users.map(u=>userRow(u)).join("");
-  $("#pager").innerHTML=`<button class="btn sec" ${d.page<=1?"disabled":""} onclick="loadUsers(${d.page-1})">◀</button>
-    <span class="muted">page ${d.page}/${d.pages} · ${d.total} users</span>
-    <button class="btn sec" ${d.page>=d.pages?"disabled":""} onclick="loadUsers(${d.page+1})">▶</button>`;
+async function loadUsers(page) {
+  USERS_PAGE = page || USERS_PAGE;
+  const q = encodeURIComponent($("#q").value.trim()); const st = $("#statusF").value;
+  const vip = $("#vipF").value; const mode = $("#modeF").value;
+  const d = await api(`/api/users?page=${USERS_PAGE}&q=${q}&status=${st}&vip=${vip}&mode=${mode}`);
+  const tb = $("#usrTbl tbody");
+  if (!d.users.length) { tb.innerHTML = `<tr><td colspan="6" class="muted">No users found.</td></tr>`; $("#pager").innerHTML = ""; return; }
+  tb.innerHTML = d.users.map(u => userRow(u)).join("");
+  $("#pager").innerHTML = `
+    <button class="btn sec" ${d.page <= 1 ? "disabled" : ""} onclick="loadUsers(${d.page - 1})">◀ Prev</button>
+    <span class="muted" style="margin: 0 8px; font-size: 13px;">Page <b style="color:var(--txt)">${d.page}</b> / ${d.pages} · <b style="color:var(--txt)">${d.total}</b> users</span>
+    <button class="btn sec" ${d.page >= d.pages ? "disabled" : ""} onclick="loadUsers(${d.page + 1})">Next ▶</button>`;
 }
-function userRow(u){
-  const id=u.telegram_id;
-  const stTag=u.status==="active"?`<span class="tag ok">active</span>`:u.status==="blocked"?`<span class="tag bad">blocked</span>`:`<span class="tag">${u.status}</span>`;
-  const vip=u.is_vip?` <span class="tag vip">VIP</span>`:"";
-  const price=u.price_override_cents!=null?birr(u.price_override_cents)+" *":"global";
+
+function userRow(u) {
+  const id = u.telegram_id;
+  const stTag = u.status === "active" ? `<span class="tag ok">active</span>` : u.status === "blocked" ? `<span class="tag bad">blocked</span>` : `<span class="tag">${u.status}</span>`;
+  const vip = u.is_vip ? ` <span class="tag vip">VIP</span>` : "";
+  const price = u.price_override_cents != null ? birr(u.price_override_cents) + " <span class='muted'>*</span>" : "<span class='muted'>global</span>";
   return `<tr>
-    <td>${who(id,u.username)}<div class="muted" style="font-size:11px">#${id}</div></td>
-    <td>${stTag}${vip}</td><td>${u.billing_mode}</td>
-    <td>${birr(u.balance_cents)}</td><td>${price}</td>
+    <td><div style="font-weight: 500">${who(id, u.username)}</div><div class="muted" style="font-size:11px; margin-top:2px;">#${id}</div></td>
+    <td>${stTag}${vip}</td>
+    <td><span class="tag">${u.billing_mode}</span></td>
+    <td style="font-weight: 500">${birr(u.balance_cents)}</td>
+    <td>${price}</td>
     <td>
-      <details class="u"><summary class="btn sec">Manage ▾</summary>
-        <div class="row" style="margin-top:8px">
-          ${u.status==="blocked"?`<button class="btn" onclick="act(${id},'unblock')">Unblock</button>`:`<button class="btn err" onclick="act(${id},'block')">Block</button>`}
-          <button class="btn ${u.is_vip?'warn':'sec'}" onclick="act(${id},'vip',${!u.is_vip})">${u.is_vip?'Un-VIP':'Make VIP'}</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <select onchange="act(${id},'mode',this.value)">
-            ${["counter","prepaid","postpaid"].map(m=>`<option value="${m}" ${u.billing_mode===m?"selected":""}>${m}</option>`).join("")}
-          </select>
-          <input class="sm" id="tp${id}" type="number" step="0.01" min="0" placeholder="Birr">
-          <button class="btn" onclick="topup(${id})">Add balance</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <input class="sm" id="pr${id}" type="number" step="0.01" min="0" placeholder="price">
-          <button class="btn sec" onclick="setPrice(${id})">Set price</button>
-          <button class="btn sec" onclick="act(${id},'price','clear')">Use global</button>
-          <input class="sm" id="cl${id}" type="number" step="0.01" min="0" placeholder="credit">
-          <button class="btn sec" onclick="setCredit(${id})">Set postpaid limit</button>
+      <details class="u">
+        <summary class="btn sec" style="padding: 6px 12px; font-size: 12px;">Manage ▾</summary>
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--line);">
+          <div class="row">
+            ${u.status === "blocked" ? `<button class="btn" onclick="act(${id},'unblock')">Unblock</button>` : `<button class="btn err" onclick="act(${id},'block')">Block</button>`}
+            <button class="btn ${u.is_vip ? 'warn' : 'sec'}" onclick="act(${id},'vip',${!u.is_vip})">${u.is_vip ? 'Remove VIP' : 'Make VIP'}</button>
+          </div>
+          <div class="row">
+            <select onchange="act(${id},'mode',this.value)">
+              ${["counter", "prepaid", "postpaid"].map(m => `<option value="${m}" ${u.billing_mode === m ? "selected" : ""}>${m}</option>`).join("")}
+            </select>
+            <input class="sm" id="tp${id}" type="number" step="0.01" min="0" placeholder="Birr">
+            <button class="btn" onclick="topup(${id})">Add balance</button>
+          </div>
+          <div class="row">
+            <input class="sm" id="pr${id}" type="number" step="0.01" min="0" placeholder="Birr">
+            <button class="btn sec" onclick="setPrice(${id})">Set price</button>
+            <button class="btn sec" onclick="act(${id},'price','clear')">Use global</button>
+          </div>
+          ${u.billing_mode === "postpaid" ? `
+          <div class="row">
+            <input class="sm" id="cl${id}" type="number" step="0.01" min="0" placeholder="Birr">
+            <button class="btn sec" onclick="setCredit(${id})">Set credit limit</button>
+          </div>` : ""}
         </div>
       </details>
     </td></tr>`;
 }
-async function act(id,action,value){try{await api(`/api/users/${id}/action`,{method:"POST",body:JSON.stringify({action,value})});toast("Done");loadUsers();refresh();}catch(e){toast(e.message,true);}}
-async function topup(id){const v=$("#tp"+id).value;if(!v||Number(v)<=0)return toast("Enter amount",true);await act(id,"topup",v);}
-async function setPrice(id){const v=$("#pr"+id).value;if(v==="")return toast("Enter price",true);await act(id,"price",v);}
-async function setCredit(id){const v=$("#cl"+id).value;await act(id,"credit",v||0);}
+
+async function act(id, action, value) { try { await api(`/api/users/${id}/action`, { method: "POST", body: JSON.stringify({ action, value }) }); toast("Updated user successfully"); loadUsers(); refresh(); } catch (e) { toast(e.message, true); } }
+async function topup(id) { const v = $("#tp" + id).value; if (!v || Number(v) <= 0) return toast("Enter amount", true); await act(id, "topup", v); }
+async function setPrice(id) { const v = $("#pr" + id).value; if (v === "") return toast("Enter price", true); await act(id, "price", v); }
+async function setCredit(id) { const v = $("#cl" + id).value; await act(id, "credit", v || 0); }
 
 // boot: try stats; if 401 → login
-(async()=>{try{await api("/api/stats");showDash();}catch{showLogin();}})();
+(async () => { try { await api("/api/stats"); showDash(); } catch { showLogin(); } })();
 </script>
 </body>
 </html>

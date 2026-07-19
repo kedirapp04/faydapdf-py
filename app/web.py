@@ -16,8 +16,8 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 
-from . import config, fayda, notify
-from .db import init_pool, close_pool, pool
+from . import config, fayda, notify, i18n
+from .db import init_pool, close_pool, pool, db_ready, db_down_policy, set_db_down_policy
 from .repo import (
     users as users_repo,
     payments as payments_repo,
@@ -119,18 +119,30 @@ async def logout(response: Response):
     return {"ok": True}
 
 
+async def _safe(coro, default):
+    try:
+        return await coro
+    except Exception:
+        return default
+
+
 @app.get("/api/stats", dependencies=[Depends(require_admin)])
 async def api_stats():
     from .services import payment_verify
-    d = await stats_repo.dashboard()
+    d = await _safe(stats_repo.dashboard(), {})
     d["mode"] = await fayda.active_mode()
-    d["paused"] = await settings_repo.get_bool("paused", False)
-    d["global_price_cents"] = await billing.global_price_cents()
-    d["accounts"] = {
-        b: dict(zip(("name", "account"), await payment_verify.receiver_for(b)))
-        for b in ("telebirr", "cbe")
-    }
+    d["paused"] = await _safe(settings_repo.get_bool("paused", False), False)
+    d["global_price_cents"] = await _safe(billing.global_price_cents(), 0)
+    d["accounts"] = await _safe(_accounts_dto(), {})
+    d["db_ready"] = db_ready()
+    d["db_down_policy"] = db_down_policy()
     return d
+
+
+async def _accounts_dto():
+    from .services import payment_verify
+    return {b: dict(zip(("name", "account"), await payment_verify.receiver_for(b)))
+            for b in ("telebirr", "cbe")}
 
 
 @app.get("/api/users", dependencies=[Depends(require_admin)])
@@ -182,7 +194,7 @@ async def api_user_action(uid: int, request: Request):
         async with pool().acquire() as conn:
             async with conn.transaction():
                 nb = await wallet.credit(conn, uid, cents, "adjust", ref_type="admin", ref_id=0)
-        await _notify(uid, f"💵 {billing.birr(cents)} added to your balance by the admin. New balance: {billing.birr(nb)}.")
+        await _notify(uid, i18n.t("credited_notify", amount=billing.birr(cents), balance=billing.birr(nb)))
     else:
         raise HTTPException(400, "unknown action")
     return _user_dto(await users_repo.get(uid))
@@ -205,7 +217,7 @@ async def api_approve(pid: int, request: Request):
     res = await payments_repo.approve(pid, "web-admin", cents)
     if not res.get("ok"):
         raise HTTPException(400, res.get("error"))
-    await _notify(res["user_id"], f"✅ Your payment was approved. {billing.birr(res['amount_cents'])} added. New balance: {billing.birr(res['balance_cents'])}.")
+    await _notify(res["user_id"], i18n.t("approved_notify", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
     return res
 
 
@@ -216,7 +228,7 @@ async def api_reject(pid: int):
     if not res.get("ok"):
         raise HTTPException(400, res.get("error"))
     if p:
-        await _notify(p["user_id"], "🚫 Your payment was rejected. Please check the receipt and resubmit.")
+        await _notify(p["user_id"], i18n.t("rejected_notify"))
     return res
 
 
@@ -229,6 +241,8 @@ async def api_settings(request: Request):
         await settings_repo.set_bool("paused", bool(body["paused"]))
     if "global_price_birr" in body:
         await settings_repo.set("global_price_cents", str(_cents(body["global_price_birr"]) or 0))
+    if "db_down_policy" in body:
+        await set_db_down_policy(str(body["db_down_policy"]))
     # Admin-set merchant receiver (per bank) — used for auto-verify + shown to users.
     for bank in ("telebirr", "cbe"):
         if f"{bank}_name" in body:

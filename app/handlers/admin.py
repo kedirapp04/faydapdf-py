@@ -6,10 +6,20 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from .. import config, fayda, notify
-from ..db import pool
+from .. import config, fayda, notify, i18n
+from ..db import pool, db_ready, db_down_policy, set_db_down_policy
 from ..repo import payments as payments_repo, users as users_repo, settings as settings_repo, wallet
 from ..services import billing
+
+DBPOLICY_LABELS = {"refuse": "Refuse (block)", "free": "Serve free", "fallback": "Serve free (fallback)"}
+DBPOLICY_CYCLE = {"refuse": "free", "free": "fallback", "fallback": "refuse"}
+
+
+async def _safe(coro, default):
+    try:
+        return await coro
+    except Exception:
+        return default
 
 router = Router()
 
@@ -34,23 +44,26 @@ def _parse_uid(text: str) -> int | None:
 
 
 async def _panel_text() -> str:
-    pending = await payments_repo.count_pending()
+    # Defensive reads so the panel still opens while the DB is down.
+    pending = await _safe(payments_repo.count_pending(), "?")
+    users = await _safe(users_repo.count(), "?")
     mode = await fayda.active_mode()
-    paused = await settings_repo.get_bool("paused", False)
-    users = await users_repo.count()
+    paused = await _safe(settings_repo.get_bool("paused", False), False)
+    db_line = "🗄 DB: ✅ up" if db_ready() else f"🗄 DB: ⚠️ DOWN — policy: {DBPOLICY_LABELS[db_down_policy()]}"
     return (
         "🛠 Admin panel"
         + ("\n⏸ SERVICE PAUSED" if paused else "")
         + f"\n👥 Users: {users}"
         + f"\n💳 Pending payments: {pending}"
         + f"\n🔀 Fayda mode: {mode}"
+        + f"\n{db_line}"
     )
 
 
 async def _panel_kb() -> InlineKeyboardMarkup:
-    pending = await payments_repo.count_pending()
+    pending = await _safe(payments_repo.count_pending(), "?")
     mode = await fayda.active_mode()
-    paused = await settings_repo.get_bool("paused", False)
+    paused = await _safe(settings_repo.get_bool("paused", False), False)
     rows = [
         [InlineKeyboardButton(text=f"💳 Pending ({pending})", callback_data="pay_list:0")],
         [InlineKeyboardButton(text=f"🔀 Mode: {mode} — switch", callback_data="mode_toggle")],
@@ -59,6 +72,7 @@ async def _panel_kb() -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="🎫 Tokens (pool health)", callback_data="tokens")])
     rows += [
         [InlineKeyboardButton(text="💳 Payment accounts", callback_data="accounts")],
+        [InlineKeyboardButton(text=f"🗄 DB-down: {DBPOLICY_LABELS[db_down_policy()]} — switch", callback_data="dbpolicy_toggle")],
         [InlineKeyboardButton(text="📢 Broadcast", callback_data="bc_start")],
         [InlineKeyboardButton(text=("▶️ Resume service" if paused else "⏸ Pause service"), callback_data="pause_toggle")],
         [InlineKeyboardButton(text="🔄 Refresh", callback_data="panel")],
@@ -102,6 +116,16 @@ async def cb_pause(c: CallbackQuery):
     now = not await settings_repo.get_bool("paused", False)
     await settings_repo.set_bool("paused", now)
     await c.answer("⏸ Paused" if now else "▶️ Resumed")
+    await c.message.edit_text(await _panel_text(), reply_markup=await _panel_kb())
+
+
+@router.callback_query(F.data == "dbpolicy_toggle")
+async def cb_dbpolicy(c: CallbackQuery):
+    if not config.is_admin(c.from_user.id):
+        return await c.answer("Admins only")
+    new = DBPOLICY_CYCLE[db_down_policy()]
+    await set_db_down_policy(new)
+    await c.answer(f"DB-down → {DBPOLICY_LABELS[new]}")
     await c.message.edit_text(await _panel_text(), reply_markup=await _panel_kb())
 
 
@@ -293,7 +317,7 @@ async def on_pay_amount(m: Message, state: FSMContext):
     if not res.get("ok"):
         return await m.answer(f"⚠️ Couldn't approve: {res.get('error')}")
     await m.answer(f"✅ Approved. Credited {billing.birr(res['amount_cents'])}. New balance: {billing.birr(res['balance_cents'])}.")
-    await notify.notify_user(res["user_id"], f"✅ Your payment was approved. {billing.birr(res['amount_cents'])} added.\nNew balance: {billing.birr(res['balance_cents'])}.")
+    await notify.notify_user(res["user_id"], i18n.t("approved_notify", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
 
 
 @router.callback_query(F.data.startswith("pay_no:"))
@@ -308,7 +332,7 @@ async def cb_pay_no(c: CallbackQuery):
     await c.answer("Rejected")
     await c.message.edit_text(f"🚫 Payment #{pid} rejected.")
     if p:
-        await notify.notify_user(p["user_id"], "🚫 Your payment was rejected. Please check the receipt and resubmit.")
+        await notify.notify_user(p["user_id"], i18n.t("rejected_notify"))
 
 
 # ── VIP + global price commands ─────────────────────────────────────────────
@@ -365,7 +389,7 @@ async def bc_text(m: Message, state: FSMContext):
     if m.text.strip().lower() in ("/cancel", "cancel"):
         await state.clear()
         return await m.answer("✖️ Cancelled.")
-    total = await pool().fetchval("SELECT count(*)::int FROM chats")
+    total = await pool().fetchval("SELECT count(DISTINCT telegram_id)::int FROM chats")
     await state.update_data(text=m.text)
     await state.set_state(AdminFlow.broadcast_go)
     ikb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -387,8 +411,9 @@ async def cb_bc_send(c: CallbackQuery, state: FSMContext):
     await c.answer("Broadcasting…")
     await c.message.edit_text("📢 Broadcasting… I'll report when done.")
     import asyncio
-    # Send each recipient from the bot THEY started (multi-bot aware).
-    rows = await pool().fetch("SELECT telegram_id, bot_id FROM chats")
+    # Send each recipient from ONE bot THEY started (multi-bot aware).
+    # DISTINCT ON ensures a user doesn't get duplicate messages if they started multiple bots.
+    rows = await pool().fetch("SELECT DISTINCT ON (telegram_id) telegram_id, bot_id FROM chats")
     sent = failed = 0
     for r in rows:
         if await notify.send(r["bot_id"], r["telegram_id"], text):
@@ -418,4 +443,4 @@ async def topup_cmd(m: Message):
         async with conn.transaction():
             new_balance = await wallet.credit(conn, int(target), cents, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
     await m.answer(f"💵 Credited {billing.birr(cents)} to {target}. New balance: {billing.birr(new_balance)}.")
-    await notify.notify_user(target, f"💵 {billing.birr(cents)} was added to your balance by the admin.\nNew balance: {billing.birr(new_balance)}.")
+    await notify.notify_user(target, i18n.t("credited_notify", amount=billing.birr(cents), balance=billing.birr(new_balance)))

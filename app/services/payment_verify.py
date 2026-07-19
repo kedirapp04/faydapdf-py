@@ -11,6 +11,7 @@ table (keys pay_telebirr_name/account, pay_cbe_name/account), NOT env — see
 `receiver_ok()` so a receipt paid to someone else can't be auto-approved. Env
 PAYMENT_RECEIVER_* stays only as a one-time fallback for Telebirr.
 """
+import io
 import re
 import asyncio
 
@@ -96,7 +97,7 @@ async def _verifypayment(bank: str, receipt: str, recv_name: str = "", recv_acct
         body["receiver_account"] = recv_acct
     try:
         status, d = await _post(f"{config.VERIFYPAYMENT_BASE_URL}/api/check",
-                                {"X-API-Key": config.VERIFYPAYMENT_API_KEY}, body, 60)
+                                {"X-API-Key": config.VERIFYPAYMENT_API_KEY}, body, 15)
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return _norm(False, "verifypayment", transient=True, error="unreachable")
     data = d.get("data") or {}
@@ -117,7 +118,7 @@ async def _leul(receipt: str) -> dict | None:
         return None
     try:
         status, d = await _post(f"{config.LEUL_VERIFY_BASE_URL}/verify-telebirr",
-                                {"x-api-key": config.LEUL_VERIFY_API_KEY}, {"reference": receipt}, 20)
+                                {"x-api-key": config.LEUL_VERIFY_API_KEY}, {"reference": receipt}, 15)
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return _norm(False, "leul", transient=True, error="unreachable")
     if d.get("success") and d.get("data"):
@@ -142,7 +143,7 @@ async def _relay(receipt: str, recv_name: str = "", recv_acct: str = "") -> dict
         body["receiver_account"] = recv_acct
     try:
         status, d = await _post(f"{config.RELAY_VERIFY_BASE_URL}/api/verify",
-                                {"X-API-Key": config.RELAY_VERIFY_API_KEY}, body, 30)
+                                {"X-API-Key": config.RELAY_VERIFY_API_KEY}, body, 15)
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return _norm(False, "relay", transient=True, error="unreachable")
     if d.get("ok") and d.get("data"):
@@ -190,11 +191,12 @@ def receiver_ok(res: dict, want_name: str, want_acct: str) -> bool:
 
 
 async def verify(receipt_id: str) -> dict:
-    """Try each configured provider; return the first *acceptable* success, else the
-    last error. A provider 'success' is only accepted when the money went to the
-    admin-set merchant for the detected bank and the receipt wasn't already used —
-    otherwise it falls through to manual admin review. Returns {ok, provider,
-    receipt_id, amount_cents, receiver_*, status, bank} or {ok:False, error, ...}."""
+    """Try each configured provider IN ORDER; return the first *acceptable* success
+    and stop (so only one provider is hit for a good receipt). A success is accepted
+    only when the money went to the admin-set merchant for the detected bank and the
+    receipt wasn't already used — otherwise it falls through to manual admin review.
+    Returns {ok, provider, receipt_id, amount_cents, receiver_*, status, bank} or
+    {ok:False, error, ...}."""
     bank = detect_bank(receipt_id)
     want_name, want_acct = await receiver_for(bank)
     last = _norm(False, "none", error="No verifier configured.", transient=False)
@@ -218,3 +220,118 @@ async def verify(receipt_id: str) -> dict:
             return res
         last = res
     return last
+
+
+# ── Telebirr screenshot OCR + look-alike correction (ported from fbot/bot.py) ──
+def ocr_telebirr(image_bytes: bytes) -> tuple[str, float, bool]:
+    """OCR a Telebirr success screenshot → (txn_number, amount, is_receipt).
+    Best-effort: needs pytesseract + the tesseract binary on the host; returns
+    ('', 0.0, False) if unavailable. OCR confuses 0/O and 5/S etc. — telebirr_
+    candidates() fixes that afterwards."""
+    try:
+        import pytesseract
+        from PIL import Image, ImageOps
+    except Exception:
+        return "", 0.0, False
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("L")
+        if img.width < 1600:                       # upscale for sharper small text
+            s = 1600.0 / img.width
+            img = img.resize((int(img.width * s), int(img.height * s)), Image.LANCZOS)
+        img = ImageOps.autocontrast(img)           # crisper black/white → better OCR
+        txt = pytesseract.image_to_string(img)
+    except Exception:
+        return "", 0.0, False
+    low = txt.lower()
+    is_receipt = any(k in low for k in ("transaction", "telebirr", "successful", "receipt", "birr"))
+    txn = ""
+    m = re.search(r"Transaction\s*Number[:\s]*([A-Z0-9 ]{8,18})", txt, re.I)
+    if m:
+        cand = re.sub(r"[^A-Z0-9]", "", m.group(1).upper())
+        if 8 <= len(cand) <= 14:
+            txn = cand
+    if not txn:
+        for tok in re.findall(r"\b([A-Z0-9]{10})\b", txt.upper()):
+            if re.search(r"[A-Z]", tok) and re.search(r"\d", tok):
+                txn = tok
+                break
+    amount = 0.0
+    ma = re.search(r"-?\s*(\d{1,7}\.\d{2})", txt)
+    if ma:
+        try:
+            amount = float(ma.group(1))
+        except Exception:
+            amount = 0.0
+    return txn, amount, is_receipt
+
+
+# digit ↔ look-alike letter pairs OCR gets wrong, both directions.
+_OCR_FLIP = {"O": "0", "0": "O", "S": "5", "5": "S", "I": "1", "1": "I",
+             "L": "1", "B": "8", "8": "B", "Z": "2", "2": "Z", "A": "4", "4": "A"}
+
+
+def telebirr_candidates(txn: str, cap: int = 18) -> list[str]:
+    """Ordered OCR-correction candidates: the exact value first, then flip look-alike
+    chars (0↔O, 5↔S, 1↔I, 8↔B, 2↔Z, 4↔A) in growing combinations. Bounded to `cap`
+    so the follow-up verification stays fast. e.g. 'DGSOKNFF9S' → … → 'DG50KNFF9S'."""
+    import itertools
+    txn = re.sub(r"[^A-Z0-9]", "", (txn or "").upper())
+    if not txn:
+        return []
+    out = [txn]
+    pos = [i for i, c in enumerate(txn) if c in _OCR_FLIP]
+    for k in range(1, len(pos) + 1):
+        for combo in itertools.combinations(pos, k):
+            chars = list(txn)
+            for i in combo:
+                chars[i] = _OCR_FLIP[chars[i]]
+            v = "".join(chars)
+            if v not in out:
+                out.append(v)
+                if len(out) >= cap:
+                    return out
+    return out
+
+
+async def verify_candidates(candidates: list[str], expected_cents: int = 0) -> dict:
+    """Return verify()'s result for the first candidate that is a real, acceptable
+    payment (ok + amount > 0, and amount ≈ expected_cents when the screenshot gave
+    one). Tries the exact value first, then the rest concurrently with an early exit,
+    so a correction costs a few parallel calls, not a slow sequence. Reuses verify(),
+    so the receiver-match + already-used guards still apply to every candidate."""
+    def _ok(res: dict) -> bool:
+        if not (res and res.get("ok")):
+            return False
+        amt = int(res.get("amount_cents") or 0)
+        if amt <= 0:
+            return False
+        if expected_cents > 0 and abs(amt - expected_cents) > 50:   # 0.5 ETB tolerance
+            return False
+        return True
+
+    if not candidates:
+        return {"ok": False, "error": "no candidates"}
+    exact = candidates[0]
+    r0 = await verify(exact)
+    if _ok(r0):
+        return r0
+    rest = candidates[1:]
+    if rest:
+        sem = asyncio.Semaphore(6)                  # bounded fan-out → stays fast/light
+
+        async def _try(c):
+            async with sem:
+                r = await verify(c)
+                return r if _ok(r) else None
+
+        tasks = [asyncio.create_task(_try(c)) for c in rest]
+        try:
+            for fut in asyncio.as_completed(tasks):
+                res = await fut
+                if res:
+                    return res
+        finally:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+    return r0                                        # nothing matched → exact (manual review)

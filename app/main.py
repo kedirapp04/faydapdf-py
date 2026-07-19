@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from . import config
-from .db import init_pool, close_pool
+from .db import init_pool, close_pool, health_loop
 from .handlers import admin, user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -48,6 +48,7 @@ async def run_bot() -> None:
 async def main() -> None:
     await init_pool()
     log.info("DB pool ready.")
+    asyncio.create_task(health_loop())  # DB-down recovery monitor
     try:
         await run_bot()
     finally:

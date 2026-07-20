@@ -49,13 +49,21 @@ CREATE TABLE IF NOT EXISTS payments (
   status        TEXT   NOT NULL DEFAULT 'pending',   -- pending | approved | rejected
   provider      TEXT,                                 -- verifypayment | leul | relay | manual
   reason        TEXT,
-  decided_by    BIGINT,
+  decided_by    TEXT,                                 -- admin id OR 'web-admin'/'web-bulk'/'auto:<provider>'
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   decided_at    TIMESTAMPTZ,
   CONSTRAINT payments_receipt_uq UNIQUE (receipt_id)
 );
 CREATE INDEX IF NOT EXISTS idx_payments_user   ON payments(user_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status) WHERE status = 'pending';
+-- Migrate decided_by BIGINT → TEXT (it stores 'web-admin'/'web-bulk'/admin id).
+-- Guarded so it only rewrites once, not on every boot.
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+      WHERE table_name='payments' AND column_name='decided_by') <> 'text' THEN
+    ALTER TABLE payments ALTER COLUMN decided_by TYPE TEXT USING decided_by::text;
+  END IF;
+END $$;
 
 -- Append-only wallet ledger — the source of truth / audit trail for every cent.
 CREATE TABLE IF NOT EXISTS wallet_ledger (

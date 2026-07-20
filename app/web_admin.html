@@ -572,14 +572,22 @@ async function loadReceipts(p){
   tb.innerHTML=d.payments.map(payRow).join("");
   $("#payPager").innerHTML=pager(d.page,d.pages,d.total,"loadReceipts");
 }
+function receiptUrl(p){
+  const id=encodeURIComponent((p.receipt_id||"").trim());
+  if(!id)return "";
+  if(p.bank==="cbe")return "https://apps.cbe.com.et:100/?id="+id;
+  return "https://transactioninfo.ethiotelecom.et/receipt/"+id;   // Telebirr
+}
 function payRow(p){
   const stcls=p.status==="approved"?"ok":p.status==="rejected"?"bad":"pend";
   const date=p.created_at?p.created_at.slice(0,10):"";
+  const ru=receiptUrl(p);
+  const rlink=ru?`<a class="btn sec sm" href="${ru}" target="_blank" rel="noreferrer" title="Open the receipt">🔗 Receipt</a>`:"";
   const act=p.status==="pending"
     ?`<input type="checkbox" class="paysel" value="${p.id}" title="select for bulk approve">
       <button class="btn sec sm" onclick="reverify(${p.id})" title="re-run auto-verifier">🔁</button>
-      <input class="sm" id="amt${p.id}" type="number" step="0.01" placeholder="0.00"><button class="btn sm" onclick="approve(${p.id})">Approve</button><button class="btn err sm" onclick="reject(${p.id})">Reject</button>`
-    :`<span class="muted">${esc(p.provider||"")}${p.decided_by?" · by "+esc(p.decided_by):""}</span>`;
+      <input class="sm" id="amt${p.id}" type="number" step="0.01" placeholder="0.00"><button class="btn sm" onclick="approve(${p.id})">Approve</button><button class="btn err sm" onclick="reject(${p.id})">Reject</button>${rlink}`
+    :`<span class="muted">${esc(p.provider||"")}${p.decided_by?" · by "+esc(p.decided_by):""}</span>${rlink}`;
   return `<tr><td>#${p.id}</td><td><button class="btn sec sm" onclick="openHist(${p.user_id})" title="User history">#${p.user_id} 📜</button></td><td><code>${esc(p.receipt_id)}</code></td><td>${esc(p.bank)}</td>
     <td>${p.amount_cents?birr(p.amount_cents):"—"}</td><td><span class="tag ${stcls}">${p.status}</span></td><td class="muted">${date}</td>
     <td class="row" style="gap:6px">${act}</td></tr>`;

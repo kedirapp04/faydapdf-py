@@ -109,9 +109,10 @@ async def page(status: str | None, q: str | None, limit: int, offset: int) -> tu
     if q:
         term = q.strip().lstrip("#")
         if term.isdigit():
-            # numeric: payment id, user id, or the admin (decided_by) who reviewed it
-            args.append(int(term))
-            where.append(f"(user_id = ${len(args)} OR id = ${len(args)} OR decided_by = ${len(args)})")
+            # numeric: payment id, user id, or the admin (decided_by, TEXT) who reviewed it
+            args.append(int(term)); n_int = len(args)
+            args.append(term); n_txt = len(args)
+            where.append(f"(user_id = ${n_int} OR id = ${n_int} OR decided_by = ${n_txt})")
         else:
             # text: receipt id or the provider/approver (verifypayment/leul/relay/manual…)
             args.append(f"%{term.upper()}%")

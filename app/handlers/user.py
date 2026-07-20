@@ -441,7 +441,6 @@ async def _notify_admins_payment(bot, payment: dict, from_user, flag: str = "", 
 async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict, screenshot_file_id=None) -> None:
     """Given a verify() result, auto-approve (right merchant, not used, amount > 0) or
     fall to manual admin review. Shared by the text and screenshot paths."""
-    flag = ""
     if v.get("ok") and int(v.get("amount_cents") or 0) > 0:
         payment, created = await payments_repo.submit(
             m.from_user.id, v.get("receipt_id") or receipt_id, v.get("bank", "telebirr"),
@@ -451,12 +450,22 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
         res = await payments_repo.approve(payment["id"], f"auto:{v.get('provider')}", int(v["amount_cents"]))
         if res.get("ok"):
             return await wait.edit_text(i18n.t("verified_added", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
-    elif v.get("receiver_mismatch"):
-        flag = "⚠️ Auto-check: paid to a DIFFERENT account — verify before approving."
-    elif v.get("already_used"):
-        flag = "⚠️ Auto-check: receipt reported ALREADY USED — verify before approving."
 
     bank = v.get("bank") or payment_verify.detect_bank(receipt_id)
+
+    # A provider CONFIRMED a real payment but to a DIFFERENT account (receiver was
+    # extracted and doesn't match any of ours) → AUTO-REJECT, don't bother the admin.
+    # receiver_mismatch only fires when a receiver IS configured (fails open otherwise).
+    if v.get("receiver_mismatch"):
+        payment, created = await payments_repo.submit(m.from_user.id, receipt_id, bank, 0, "auto")
+        if not created:
+            return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
+        await payments_repo.reject(payment["id"], "auto:receiver_mismatch", "paid to a different account")
+        return await wait.edit_text(i18n.t("receipt_wrong_account"))
+
+    flag = ""
+    if v.get("already_used"):
+        flag = "⚠️ Auto-check: receipt reported ALREADY USED — verify before approving."
     payment, created = await payments_repo.submit(m.from_user.id, receipt_id, bank, 0, "manual")
     if not created:
         return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
@@ -466,53 +475,76 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
 
 
 # ── auto-detect a payment receipt anywhere (link / txn number / 127 SMS) ──────
-# Mirrors faydapdf-railway's isLikelyTelebirrPaymentInput: a trusted receipt URL, or
-# a bare 10-char Telebirr reference (must contain a digit). Lets a user paste a
-# receipt / link / txn at ANY time, without first tapping "Add Payment".
-_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.I)
-_RECEIPT_HOST_RE = re.compile(r"transactioninfo\.ethiotelecom|telebirr|apps\.cbe|cbe\.com\.et", re.I)
+# Mirrors faydapdf-railway detectBank + extractTelebirrTransactionId. Key rule: a
+# real Telebirr code is 10 alphanumerics with BOTH a letter AND a digit — so a phone
+# number (all digits, e.g. 0982637420), a 12-digit number, or an all-letters word is
+# NEVER treated as a receipt. CBE is an FT… reference (FT + digits, ~12 chars).
+_TELEBIRR_LINK_RE = re.compile(r"transactioninfo\.ethiotelecom\.et/receipt/([A-Za-z0-9]+)", re.I)
+_CBE_HOST_RE = re.compile(r"apps\.cbe\.com\.et|mbreciept\.cbe\.com\.et|mb\.cbe\.com\.et", re.I)
+_CBE_REF_RE = re.compile(r"FT[A-Z0-9]{6,}", re.I)
+_SMS_TXN_RE = re.compile(r"transaction\s*(?:number|no\.?)\s*(?:is|:)?\s*([A-Za-z0-9]{8,15})", re.I)
 
 
-def _extract_receipt_id(text: str) -> str:
-    t = (text or "").strip().upper()
-    for pat in (r"RECEIPT/([A-Z0-9]{10})",
-                r"[?&](?:ID|RECEIPT|RECEIPTID|TRANSACTION|TRANSACTIONNO)=([A-Z0-9]{10})",
-                r"\b([A-Z0-9]{10})\b"):
-        mt = re.search(pat, t)
-        if mt:
-            return mt.group(1)
-    return ""
-
-
-def _is_telebirr_receipt_id(v: str) -> bool:
+def _is_telebirr_ref(v: str) -> bool:
+    """10 alphanumerics containing BOTH a letter and a digit (never all-numeric like a
+    phone/amount, never all letters)."""
     v = (v or "").strip().upper()
-    return bool(re.fullmatch(r"[A-Z0-9]{10}", v)) and bool(re.search(r"\d", v))
+    return bool(re.fullmatch(r"[A-Z0-9]{10}", v)) and bool(re.search(r"[A-Z]", v)) and bool(re.search(r"\d", v))
+
+
+def _extract_reference(text: str) -> tuple[str, str]:
+    """(reference, bank) pulled from a link / 127 SMS / bare code, or ('','') if the
+    text isn't a valid receipt. Rejects phone numbers and 12-digit numbers."""
+    t = (text or "").strip()
+    if not t:
+        return "", ""
+    up = t.upper()
+    # CBE: an app link, or a bare/embedded FT… reference (FT + digits, ~12 chars)
+    if _CBE_HOST_RE.search(t) or re.fullmatch(r"FT[A-Z0-9]{6,}(?:-\d{6,})?", up):
+        m = _CBE_REF_RE.search(up)
+        if m:
+            return m.group(0), "cbe"
+    # Telebirr receipt link
+    m = _TELEBIRR_LINK_RE.search(t)
+    if m and _is_telebirr_ref(m.group(1)):
+        return m.group(1).upper(), "telebirr"
+    # 127 SMS: "transaction number is XXXXXXXXXX"
+    m = _SMS_TXN_RE.search(t)
+    if m and _is_telebirr_ref(m.group(1)):
+        return m.group(1).upper(), "telebirr"
+    # Bare Telebirr code (the whole message is the code)
+    if _is_telebirr_ref(up):
+        return up, "telebirr"
+    # Last resort: an FT… (CBE) ref, else a 10-char Telebirr token (letter + digit)
+    m = re.search(r"\bFT[A-Z0-9]{6,}\b", up)
+    if m:
+        return m.group(0), "cbe"
+    for tok in re.findall(r"\b[A-Z0-9]{10}\b", up):
+        if _is_telebirr_ref(tok):
+            return tok, "telebirr"
+    return "", ""
 
 
 def _looks_like_receipt(text: str) -> bool:
-    t = (text or "").strip()
-    if not t:
-        return False
-    u = _URL_RE.search(t)
-    if u and _RECEIPT_HOST_RE.search(u.group(0)):
-        return True
-    return _is_telebirr_receipt_id(_extract_receipt_id(t))
+    return bool(_extract_reference(text)[0])
 
 
 async def _submit_receipt_text(m: Message, text: str) -> bool:
-    """Extract the reference from a bare txn / link / 127 SMS, verify (or fall to
-    manual review) and finalize. Returns False if no reference could be read. Shared
-    by the Add-Balance step and the anytime auto-detect."""
-    # Prefer a token that has BOTH letters and digits (the Telebirr/CBE reference
-    # shape) so an SMS/link doesn't pick a phone number, amount, or a word by mistake.
-    tokens = re.findall(r"\b[A-Z0-9]{8,14}\b", (text or "").strip().upper())
-    mixed = [t for t in tokens if re.search(r"[A-Z]", t) and re.search(r"\d", t)]
-    receipt_id = (mixed or tokens or [""])[0]
-    if not receipt_id:
+    """Extract a valid reference from a bare txn / link / 127 SMS, verify (with
+    look-alike correction, like the screenshot path) and finalize. Returns False if no
+    valid reference was found. Shared by the Add-Balance step and the anytime auto-detect."""
+    ref, bank = _extract_reference(text)
+    if not ref:
         return False
     wait = await m.answer(i18n.t("checking_payment"))
-    v = await payment_verify.verify(receipt_id) if await payment_verify.any_configured() else {"ok": False}
-    await _finalize_receipt(m, wait, v.get("receipt_id") or receipt_id, v)
+    if not await payment_verify.any_configured():
+        v = {"ok": False}
+    elif bank == "telebirr":
+        # Correct ambiguous OCR/typo look-alikes (O↔0, I↔1, S↔5 …) and try each.
+        v = await payment_verify.verify_candidates(payment_verify.telebirr_candidates(ref), 0)
+    else:
+        v = await payment_verify.verify(ref)
+    await _finalize_receipt(m, wait, v.get("receipt_id") or ref, v)
     return True
 
 

@@ -317,7 +317,7 @@
 
 <script>
 const $=(s,r=document)=>r.querySelector(s);
-let PAGE={users:1,receipts:1}, bcTimer=null, debTimer=null, HIDE_BAL=false, LAST={};
+let PAGE={users:1,receipts:1}, bcTimer=null, debTimer=null, HIDE_BAL=false, LAST={}, receiptsTimer=null;
 function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");setTimeout(()=>t.className="toast",1900)}
 function birr(c){return (Number(c||0)/100).toLocaleString(undefined,{maximumFractionDigits:2})+" Birr"}
 function birrMask(c){return HIDE_BAL?"••••":birr(c)}   // dashboard totals only
@@ -347,14 +347,24 @@ function refreshAll(){
 }
 
 function showTab(t){
+  if(receiptsTimer){clearInterval(receiptsTimer);receiptsTimer=null;}   // stop receipts poll on tab switch
   document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
   document.querySelectorAll(".tabpanel").forEach(p=>p.classList.add("hide"));
   $("#p-"+t).classList.remove("hide");
   if(t==="users")loadUsers(PAGE.users);
-  if(t==="receipts"){loadReceipts(PAGE.receipts);loadTracked();}
+  if(t==="receipts"){loadReceipts(PAGE.receipts);loadTracked();receiptsPoll();}
   if(t==="downloads")loadDownloads();
   if(t==="broadcast"){bcCount();loadCampaigns();}
   if(t==="billing"){bonusCount();bonusThreshCount();}
+}
+function receiptsPoll(){
+  if(receiptsTimer)clearInterval(receiptsTimer);
+  receiptsTimer=setInterval(()=>{
+    if($("#p-receipts").classList.contains("hide")){clearInterval(receiptsTimer);receiptsTimer=null;return;}
+    const ae=document.activeElement;   // don't refresh while typing an amount / search
+    if(ae&&$("#p-receipts").contains(ae)&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
+    loadReceipts();loadTracked();
+  },8000);
 }
 
 async function bonusCount(){try{const d=await api("/api/broadcast/count?segment="+$("#bonusSeg").value);$("#bonusCount").textContent=d.count+" users"}catch{$("#bonusCount").textContent="?"}}
@@ -417,7 +427,7 @@ function histHtml(h){
     </div>
     <div class="mini">🧾 Receipts</div>
     <div class="scroll"><table><thead><tr><th>#</th><th>Receipt</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
-      <tbody>${rows(h.payments,5,p=>`<tr><td>#${p.id}</td><td><code>${esc(p.receipt_id)}</code></td><td>${p.amount_cents?birr(p.amount_cents):'—'}</td><td><span class="tag ${p.status==='approved'?'ok':p.status==='rejected'?'bad':'pend'}">${p.status}</span></td><td class="muted">${p.created_at?p.created_at.slice(0,10):''}</td></tr>`)}</tbody></table></div>
+      <tbody>${rows(h.payments,5,p=>{const ru=receiptUrl(p);const rc=ru?`<a href="${ru}" target="_blank" rel="noreferrer" title="View receipt"><code>${esc(p.receipt_id)}</code> 🔗</a>`:`<code>${esc(p.receipt_id)}</code>`;return `<tr><td>#${p.id}</td><td>${rc}</td><td>${p.amount_cents?birr(p.amount_cents):'—'}</td><td><span class="tag ${p.status==='approved'?'ok':p.status==='rejected'?'bad':'pend'}">${p.status}</span></td><td class="muted">${p.created_at?p.created_at.slice(0,10):''}</td></tr>`;})}</tbody></table></div>
     <div class="mini">💰 Wallet ledger</div>
     <div class="scroll"><table><thead><tr><th>Kind</th><th>Amount</th><th>Balance after</th><th>Reason</th><th>Date</th></tr></thead>
       <tbody>${rows(h.ledger,5,l=>`<tr><td>${l.kind}</td><td>${birr(l.amount_cents)}</td><td>${birr(l.balance_after_cents)}</td><td class="muted">${esc(l.reason||'')}</td><td class="muted">${l.created_at?l.created_at.slice(0,10):''}</td></tr>`)}</tbody></table></div>
@@ -428,7 +438,7 @@ function histHtml(h){
 
 let liveTimer=null;
 function startLive(){refresh();liveTimer=setInterval(refresh,6000)}
-function stopLive(){if(liveTimer)clearInterval(liveTimer);liveTimer=null}
+function stopLive(){if(liveTimer)clearInterval(liveTimer);liveTimer=null;if(receiptsTimer){clearInterval(receiptsTimer);receiptsTimer=null;}}
 async function refresh(){try{const s=await api("/api/stats");LAST.stats=s;renderCards(s);renderBilling(s);$("#liveDot").style.background="var(--brand)"}catch{$("#liveDot").style.background="var(--danger)"}}
 function renderCards(s){
   const it=[["Users",s.users],["Active",s.active],["Blocked",s.blocked],["VIP",s.vip],

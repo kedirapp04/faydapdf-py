@@ -476,9 +476,9 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
 
 # ── auto-detect a payment receipt anywhere (link / txn number / 127 SMS) ──────
 # Mirrors faydapdf-railway detectBank + extractTelebirrTransactionId. Key rule: a
-# real Telebirr code is 10 alphanumerics with BOTH a letter AND a digit — so a phone
-# number (all digits, e.g. 0982637420), a 12-digit number, or an all-letters word is
-# NEVER treated as a receipt. CBE is an FT… reference (FT + digits, ~12 chars).
+# real Telebirr code is 10 alphanumerics that contains at least one LETTER — so a
+# phone number / amount (all digits, e.g. 0982637420) or a 12-digit number is NEVER
+# treated as a receipt, but a letter-heavy code still is. CBE is an FT… reference.
 _TELEBIRR_LINK_RE = re.compile(r"transactioninfo\.ethiotelecom\.et/receipt/([A-Za-z0-9]+)", re.I)
 _CBE_HOST_RE = re.compile(r"apps\.cbe\.com\.et|mbreciept\.cbe\.com\.et|mb\.cbe\.com\.et", re.I)
 _CBE_REF_RE = re.compile(r"FT[A-Z0-9]{6,}", re.I)
@@ -486,10 +486,10 @@ _SMS_TXN_RE = re.compile(r"transaction\s*(?:number|no\.?)\s*(?:is|:)?\s*([A-Za-z
 
 
 def _is_telebirr_ref(v: str) -> bool:
-    """10 alphanumerics containing BOTH a letter and a digit (never all-numeric like a
-    phone/amount, never all letters)."""
+    """10 alphanumerics containing at least one LETTER (never an all-numeric phone
+    number/amount). An all-letters code is allowed — those can occur."""
     v = (v or "").strip().upper()
-    return bool(re.fullmatch(r"[A-Z0-9]{10}", v)) and bool(re.search(r"[A-Z]", v)) and bool(re.search(r"\d", v))
+    return bool(re.fullmatch(r"[A-Z0-9]{10}", v)) and bool(re.search(r"[A-Z]", v))
 
 
 def _extract_reference(text: str) -> tuple[str, str]:

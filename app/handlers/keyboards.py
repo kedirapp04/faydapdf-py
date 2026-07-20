@@ -55,10 +55,10 @@ def cancel_kb() -> InlineKeyboardMarkup:
 
 
 def format_kb() -> InlineKeyboardMarkup:
-    """Per-download output choice, shown right after a FIN/FAN is entered."""
+    """Per-download output choice, shown right after a FIN/FAN is entered.
+    One format per download — 'Both' was removed on request."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📄 PDF", callback_data="dl:pdf"),
          InlineKeyboardButton(text="🖼 Screenshot", callback_data="dl:screenshot")],
-        [InlineKeyboardButton(text="📦 Both", callback_data="dl:both")],
         [InlineKeyboardButton(text="✖️ Cancel", callback_data="cancel")],
     ])

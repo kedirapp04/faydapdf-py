@@ -121,7 +121,7 @@
       <select id="modeF" onchange="loadUsers(1)"><option value="">All modes</option><option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option></select>
       <select id="bonusF" onchange="loadUsers(1)"><option value="">Any bonus</option><option value="wallet">Has bonus wallet</option><option value="unspent">Never charged (holds balance)</option></select>
     </div>
-    <div class="scroll"><table id="usrTbl"><thead><tr><th>User</th><th>Status</th><th>Mode</th><th>Balance</th><th>Price</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll"><table id="usrTbl"><thead><tr><th>User</th><th>Status</th><th>Mode</th><th>Balance</th><th>Price</th><th>📥 Downloads</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
     <div class="pager" id="usrPager"></div>
   </div>
 
@@ -427,7 +427,7 @@ function histHtml(h){
     </div>
     <div class="mini">🧾 Receipts</div>
     <div class="scroll"><table><thead><tr><th>#</th><th>Receipt</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
-      <tbody>${rows(h.payments,5,p=>{const ru=receiptUrl(p);const rc=ru?`<a href="${ru}" target="_blank" rel="noreferrer" title="View receipt"><code>${esc(p.receipt_id)}</code> 🔗</a>`:`<code>${esc(p.receipt_id)}</code>`;return `<tr><td>#${p.id}</td><td>${rc}</td><td>${p.amount_cents?birr(p.amount_cents):'—'}</td><td><span class="tag ${p.status==='approved'?'ok':p.status==='rejected'?'bad':'pend'}">${p.status}</span></td><td class="muted">${p.created_at?p.created_at.slice(0,10):''}</td></tr>`;})}</tbody></table></div>
+      <tbody>${rows(h.payments,5,p=>{const ru=receiptUrl(p);const isImg=(p.receipt_id||'').toUpperCase().startsWith('IMG-');const rc=isImg?'<span class="muted">📷 screenshot</span>':(ru?`<a href="${ru}" target="_blank" rel="noreferrer" title="View receipt"><code>${esc(p.receipt_id)}</code> 🔗</a>`:`<code>${esc(p.receipt_id)}</code>`);return `<tr><td>#${p.id}</td><td>${rc}</td><td>${p.amount_cents?birr(p.amount_cents):'—'}</td><td><span class="tag ${p.status==='approved'?'ok':p.status==='rejected'?'bad':'pend'}">${p.status}</span></td><td class="muted">${p.created_at?p.created_at.slice(0,10):''}</td></tr>`;})}</tbody></table></div>
     <div class="mini">💰 Wallet ledger</div>
     <div class="scroll"><table><thead><tr><th>Kind</th><th>Amount</th><th>Balance after</th><th>Reason</th><th>Date</th></tr></thead>
       <tbody>${rows(h.ledger,5,l=>`<tr><td>${l.kind}</td><td>${birr(l.amount_cents)}</td><td>${birr(l.balance_after_cents)}</td><td class="muted">${esc(l.reason||'')}</td><td class="muted">${l.created_at?l.created_at.slice(0,10):''}</td></tr>`)}</tbody></table></div>
@@ -504,6 +504,7 @@ function userRow(u){
   const price=u.price_override_cents!=null?birr(u.price_override_cents)+" *":"global";
   return `<tr><td>${who(id,u.username)}<div class="muted" style="font-size:11px">#${id}</div></td>
     <td>${st}${vip}${tagChip}</td><td>${u.billing_mode}</td><td class="baltxt">${birr(u.balance_cents)}</td><td>${price}</td>
+    <td>${u.downloads_count||0}</td>
     <td><button class="btn sec sm" onclick="openManage(${id})">⚙ Manage</button></td></tr>`;
 }
 
@@ -582,9 +583,14 @@ async function loadReceipts(p){
   tb.innerHTML=d.payments.map(payRow).join("");
   $("#payPager").innerHTML=pager(d.page,d.pages,d.total,"loadReceipts");
 }
+function isRealRef(id){                       // a genuine bank reference we can look up
+  id=(id||"").trim().toUpperCase();
+  if(!id||id.startsWith("IMG-"))return false; // IMG- = screenshot with no readable number
+  return /^[A-Z0-9]+$/.test(id)&&id.length>=10&&/\d/.test(id);
+}
 function receiptUrl(p){
+  if(!isRealRef(p.receipt_id))return "";      // screenshots / placeholders have no lookup URL
   const id=encodeURIComponent((p.receipt_id||"").trim());
-  if(!id)return "";
   if(p.bank==="cbe")return "https://apps.cbe.com.et:100/?id="+id;
   return "https://transactioninfo.ethiotelecom.et/receipt/"+id;   // Telebirr
 }
@@ -593,12 +599,15 @@ function payRow(p){
   const date=p.created_at?p.created_at.slice(0,10):"";
   const ru=receiptUrl(p);
   const rlink=ru?`<a class="btn sec sm" href="${ru}" target="_blank" rel="noreferrer" title="Open the receipt">🔗 Receipt</a>`:"";
+  const rid=(p.receipt_id||"").toUpperCase().startsWith("IMG-")
+    ?'<span class="muted" title="Unreadable screenshot — no transaction number">📷 screenshot</span>'
+    :`<code>${esc(p.receipt_id)}</code>`;
   const act=p.status==="pending"
     ?`<input type="checkbox" class="paysel" value="${p.id}" title="select for bulk approve">
       <button class="btn sec sm" onclick="reverify(${p.id})" title="re-run auto-verifier">🔁</button>
       <input class="sm" id="amt${p.id}" type="number" step="0.01" placeholder="0.00"><button class="btn sm" onclick="approve(${p.id})">Approve</button><button class="btn err sm" onclick="reject(${p.id})">Reject</button>${rlink}`
     :`<span class="muted">${esc(p.provider||"")}${p.decided_by?" · by "+esc(p.decided_by):""}</span>${rlink}`;
-  return `<tr><td>#${p.id}</td><td><button class="btn sec sm" onclick="openHist(${p.user_id})" title="User history">#${p.user_id} 📜</button></td><td><code>${esc(p.receipt_id)}</code></td><td>${esc(p.bank)}</td>
+  return `<tr><td>#${p.id}</td><td><button class="btn sec sm" onclick="openHist(${p.user_id})" title="User history">#${p.user_id} 📜</button></td><td>${rid}</td><td>${esc(p.bank)}</td>
     <td>${p.amount_cents?birr(p.amount_cents):"—"}</td><td><span class="tag ${stcls}">${p.status}</span></td><td class="muted">${date}</td>
     <td class="row" style="gap:6px">${act}</td></tr>`;
 }

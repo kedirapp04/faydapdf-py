@@ -121,7 +121,9 @@ async def page(status: str | None, q: str | None, limit: int, offset: int,
     total, rows = await asyncio.gather(
         pool().fetchval(f"SELECT count(*)::int FROM users {clause}", *args),
         pool().fetch(
-            f"SELECT * FROM users {clause} ORDER BY created_at DESC LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
+            "SELECT *, (SELECT count(*)::int FROM downloads d WHERE d.user_id = users.telegram_id) "
+            f"AS downloads_count FROM users {clause} ORDER BY created_at DESC "
+            f"LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
             *args, limit, offset),
     )
     return [dict(r) for r in rows], total

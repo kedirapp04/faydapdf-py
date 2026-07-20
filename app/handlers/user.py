@@ -327,10 +327,10 @@ async def on_otp(m: Message, state: FSMContext):
             mark_db_down()
     await wait.delete()
 
-    # Deliver per the USER's own preference (set via 📄 Get PDF / 🖼 Get Screenshot):
-    # 'both' (default), 'pdf', or 'screenshot'. Always falls back to whatever the
-    # provider actually returned (API mode has no screenshots).
-    delivery = data.get("delivery", "both")
+    # Deliver the ONE format the user chose (📄 Get PDF / 🖼 Get Screenshot): 'pdf' or
+    # 'screenshot' — 'Both' was removed. Always falls back to whatever the provider
+    # actually returned (API mode has no screenshots).
+    delivery = data.get("delivery", "pdf")
     shots = res.get("screenshots") or []
     want_shots = bool(shots) and delivery in ("both", "screenshot")
     want_pdf = bool(res.get("pdf")) and (delivery in ("both", "pdf") or not want_shots)
@@ -461,6 +461,7 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
     if not created:
         return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
     await wait.edit_text(i18n.t("receipt_submitted", id=payment["id"]))
+    # The admin still sees the image itself in their Telegram DM (attached below).
     await _notify_admins_payment(m.bot, payment, m.from_user, flag, screenshot_file_id)
 
 
@@ -558,18 +559,23 @@ async def on_payment_photo(m: Message, state: FSMContext):
         raw = bio.read()
     except Exception:
         return await m.answer(i18n.t("image_read_fail"), reply_markup=kb.main_kb(m.from_user.id))
-    await state.clear()
     wait = await m.answer(i18n.t("reading_screenshot"))
     txn, amount, _is_receipt = await asyncio.to_thread(payment_verify.ocr_telebirr, raw)
+    if not txn:
+        # No readable transaction number → this is NOT a valid receipt. Do not create a
+        # payment from an unreadable image; ask for the number (or a clearer photo).
+        if not in_receipt:
+            await state.clear()
+        return await wait.edit_text(i18n.t("couldnt_read_txn"))
+    await state.clear()
     await wait.edit_text(i18n.t("checking_payment"))
-    if txn and await payment_verify.any_configured():
+    if await payment_verify.any_configured():
         v = await payment_verify.verify_candidates(payment_verify.telebirr_candidates(txn), round((amount or 0) * 100))
     else:
         v = {"ok": False}
-    # If OCR couldn't read a reference, still submit for manual review with the image
-    # attached — never drop a receipt. The admin reads the amount/txn off the photo.
-    receipt_id = v.get("receipt_id") or txn or f"IMG-{m.photo[-1].file_unique_id}"
-    await _finalize_receipt(m, wait, receipt_id, v, screenshot_file_id=m.photo[-1].file_id)
+    # A real number was read → verify, else manual review. The admin also gets the
+    # image in their Telegram DM for the manual case (not stored in the DB).
+    await _finalize_receipt(m, wait, v.get("receipt_id") or txn, v, screenshot_file_id=m.photo[-1].file_id)
 
 
 async def _ask_format(m: Message, state: FSMContext, fans: list[str], dropped: int = 0) -> None:
@@ -605,7 +611,7 @@ async def _run_download(m: Message, state: FSMContext, fans: list[str], delivery
 @router.callback_query(F.data.startswith("dl:"))
 async def on_choose_fmt(c: CallbackQuery, state: FSMContext):
     fmt = c.data.split(":", 1)[1]
-    if fmt not in ("pdf", "screenshot", "both"):
+    if fmt not in ("pdf", "screenshot"):   # 'Both' removed — one format per download
         return await c.answer()
     blk = await _maint_block_download(c.from_user.id)
     if blk:
@@ -633,7 +639,7 @@ async def on_fan_awaited(m: Message, state: FSMContext):
         await state.clear()
         return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     data = await state.get_data()
-    fmt = data.get("dl_fmt", "both")
+    fmt = data.get("dl_fmt", "pdf")
     fans, _dropped = _parse_fans(m.text)
     if not fans:
         return await m.answer(i18n.t("send_fan_or_cancel"), reply_markup=kb.cancel_kb())

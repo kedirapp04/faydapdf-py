@@ -95,6 +95,7 @@ def _user_dto(u: dict) -> dict:
         "allow_screenshot": u.get("allow_screenshot", True),
         "daily_limit": u["daily_limit"],
         "total_limit": u["total_limit"],
+        "downloads_count": u.get("downloads_count", 0),
         "created_at": u["created_at"].isoformat() if u.get("created_at") else None,
     }
 

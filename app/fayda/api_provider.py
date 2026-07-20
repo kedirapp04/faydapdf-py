@@ -51,6 +51,9 @@ class ApiProvider(FaydaProvider):
                                   json={"otp": otp, "format": "pdf"}) as r:
                 if r.status == 200 and r.content_type == "application/pdf":
                     body = await r.read()
+                    # Reject an empty/truncated document — never deliver + charge for it.
+                    if not body or len(body) < 2000 or not body[:5].startswith(b"%PDF"):
+                        return err("The document came back empty. Please try again.")
                     name = "fayda"
                     hdr = r.headers.get("X-Person-Name")
                     if hdr:

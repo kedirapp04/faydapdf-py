@@ -255,6 +255,18 @@ def _render_fallback(data: dict) -> bytes:
     return buf.getvalue()
 
 
+def has_person_data(callback_json) -> bool:
+    """True only if the callback actually carries person data (a name or FCN). Guards
+    against delivering + charging for a blank template when the backend returned an
+    error or an empty response."""
+    d = _find_data(callback_json)
+    if not isinstance(d, dict):
+        return False
+    name = _pick(d, "fullName_eng", "fullNameEng", "fullName", "fullName_amh", "fullNameAmh")
+    fcn = _pick(d, "fcn", "FCN")
+    return bool(str(name or "").strip() or str(fcn or "").strip())
+
+
 def render(callback_json) -> tuple[bytes, str]:
     d = _find_data(callback_json)
     data = _pdf_data(d)

@@ -12,6 +12,7 @@ Faithful port of faydapdf-railway/server3AuthFlow.js (Server-4 path):
 layout can only be confirmed against a real pool token + the Fayda backend. Until
 then, API mode is the safe default.
 """
+import asyncio
 import base64
 import contextvars
 import hashlib
@@ -338,13 +339,28 @@ class Server4Provider(FaydaProvider):
             code = _payload(cd).get("code")
             if not code:
                 return err("eSignet returned no authorization code.")
-            # callback with a FRESH single-use token
+            # callback with a FRESH single-use token. Try both endpoint shapes (like
+            # faydapdf-railway) and VALIDATE the response actually carries person data —
+            # otherwise we'd deliver a blank template and (worse) charge for it.
             token = await take_pool_token()
             cb_body = {"code": code, "codeVerifier": pkce["verifier"], "state": state}
-            async with aiohttp.ClientSession(timeout=_TIMEOUT) as cb:
-                async with cb.post(config.FAYDA_API_BASE + "/api/v2/auth/callback",
-                                   headers=_backend_headers(token or None), json=cb_body) as r:
-                    user = await r.json(content_type=None)
+            user, cb_status, cb_err = None, 0, None
+            for path in ("/api/v2/auth/callback", "/auth/callback"):
+                try:
+                    async with aiohttp.ClientSession(timeout=_TIMEOUT) as cb:
+                        async with cb.post(config.FAYDA_API_BASE + path,
+                                           headers=_backend_headers(token or None), json=cb_body) as r:
+                            cb_status = r.status
+                            user = await r.json(content_type=None)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    cb_err = e
+                    continue
+                if cb_status == 200 and pdf_render.has_person_data(user):
+                    break
+            if not (user is not None and pdf_render.has_person_data(user)):
+                # Never charge/deliver a dataless PDF — surface an error so the user retries.
+                detail = f"HTTP {cb_status}" if cb_status else (type(cb_err).__name__ if cb_err else "no data")
+                return err(f"Couldn't retrieve your Fayda data — please try again. ({detail})")
             pdf_bytes, name = pdf_render.render(user)
             # Screenshots (front/back/photo-qr) are best-effort — a failure here must
             # NEVER stop the PDF from being delivered.

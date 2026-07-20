@@ -521,7 +521,8 @@ async def api_broadcast_csv(cid: int):
 async def api_approve(pid: int, request: Request):
     body = await request.json()
     cents = _cents(body.get("amount_birr"))
-    res = await payments_repo.approve(pid, "web-admin", cents)
+    new_receipt = (body.get("receipt_id") or "").strip() or None   # look-alike-corrected ref
+    res = await payments_repo.approve(pid, "web-admin", cents, receipt_id=new_receipt)
     if not res.get("ok"):
         raise HTTPException(400, res.get("error"))
     await _notify(res["user_id"], i18n.t("approved_notify", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
@@ -549,11 +550,20 @@ async def api_reverify(pid: int):
         raise HTTPException(404, "not found")
     if not await payment_verify.any_configured():
         return {"ok": False, "error": "no auto-verifier configured"}
-    v = await payment_verify.verify(p["receipt_id"])
+    receipt = p["receipt_id"]
+    # Try look-alike corrections (O↔0, I↔1, S↔5 …) so a mistyped/OCR'd receipt like
+    # DGH3WU4015 still resolves to the real DGH3WU4OI5, with the receiver check applied.
+    if payment_verify.detect_bank(receipt) == "telebirr":
+        v = await payment_verify.verify_candidates(payment_verify.telebirr_candidates(receipt), 0)
+    else:
+        v = await payment_verify.verify(receipt)
+    corrected = v.get("receipt_id") or receipt
     return {
         "ok": bool(v.get("ok")),
         "provider": v.get("provider"),
         "amount_cents": int(v.get("amount_cents") or 0),
+        "receipt_id": corrected,
+        "corrected": bool(v.get("ok")) and corrected != receipt,
         "receiver_name": v.get("receiver_name"),
         "receiver_account": v.get("receiver_account"),
         "receiver_mismatch": bool(v.get("receiver_mismatch")),
@@ -578,13 +588,19 @@ async def api_bulk_approve(request: Request):
         if not p or p["status"] != "pending":
             skipped.append({"id": pid, "reason": "not pending"}); continue
         amt = int(p.get("amount_cents") or 0)
+        corrected = None
         if amt <= 0 and configured:
-            v = await payment_verify.verify(p["receipt_id"])
+            receipt = p["receipt_id"]
+            if payment_verify.detect_bank(receipt) == "telebirr":
+                v = await payment_verify.verify_candidates(payment_verify.telebirr_candidates(receipt), 0)
+            else:
+                v = await payment_verify.verify(receipt)
             if v.get("ok") and int(v.get("amount_cents") or 0) > 0:
                 amt = int(v["amount_cents"])
+                corrected = v.get("receipt_id")   # apply the look-alike-fixed reference
         if amt <= 0:
             skipped.append({"id": pid, "reason": "no verified amount"}); continue
-        res = await payments_repo.approve(pid, "web-bulk", amt)
+        res = await payments_repo.approve(pid, "web-bulk", amt, receipt_id=corrected)
         if res.get("ok"):
             approved.append({"id": pid, "amount_cents": amt})
             await _notify(res["user_id"], i18n.t("approved_notify",

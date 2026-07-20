@@ -36,9 +36,14 @@ async def get(payment_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def approve(payment_id: int, admin_id, amount_cents: int | None = None) -> dict:
+async def approve(payment_id: int, admin_id, amount_cents: int | None = None,
+                  receipt_id: str | None = None) -> dict:
     """Atomically approve a pending payment AND credit the balance. Idempotent:
-    a payment that isn't 'pending' anymore is a no-op (returns already_*)."""
+    a payment that isn't 'pending' anymore is a no-op (returns already_*).
+
+    receipt_id (optional): correct the recorded reference to a look-alike-fixed value
+    (e.g. DGH3WU4015 → DGH3WU4OI5) before approving, so the REAL receipt is the one
+    marked used. Rejected as `duplicate_receipt` if another payment already holds it."""
     async with pool().acquire() as conn:
         async with conn.transaction():
             pay = await conn.fetchrow("SELECT * FROM payments WHERE id=$1 FOR UPDATE", int(payment_id))
@@ -46,6 +51,14 @@ async def approve(payment_id: int, admin_id, amount_cents: int | None = None) ->
                 return {"ok": False, "error": "not_found"}
             if pay["status"] != PENDING:
                 return {"ok": False, "error": f"already_{pay['status']}", "payment": dict(pay)}
+
+            new_ref = (receipt_id or "").strip().upper() or None
+            if new_ref and new_ref != pay["receipt_id"]:
+                dup = await conn.fetchrow(
+                    "SELECT id FROM payments WHERE receipt_id=$1 AND id<>$2", new_ref, int(payment_id))
+                if dup is not None:   # the corrected receipt is already recorded → never double-credit
+                    return {"ok": False, "error": "duplicate_receipt", "receipt_id": new_ref}
+                await conn.execute("UPDATE payments SET receipt_id=$1 WHERE id=$2", new_ref, int(payment_id))
 
             amount = amount_cents if amount_cents is not None else pay["amount_cents"]
             if amount is None or amount <= 0:

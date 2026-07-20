@@ -611,12 +611,16 @@ function payRow(p){
     <td>${p.amount_cents?birr(p.amount_cents):"—"}</td><td><span class="tag ${stcls}">${p.status}</span></td><td class="muted">${date}</td>
     <td class="row" style="gap:6px">${act}</td></tr>`;
 }
+const _corrected={};   // payment id -> look-alike-corrected receipt (from re-verify)
 async function approve(id){const a=$("#amt"+id).value;if(!a||Number(a)<=0)return toast("Enter an amount",true);
-  try{const r=await api(`/api/payments/${id}/approve`,{method:"POST",body:JSON.stringify({amount_birr:a})});toast("Approved");loadReceipts();loadTracked();refresh()}catch(e){toast(e.message,true)}}
+  const body={amount_birr:a}; if(_corrected[id])body.receipt_id=_corrected[id];
+  try{const r=await api(`/api/payments/${id}/approve`,{method:"POST",body:JSON.stringify(body)});toast(_corrected[id]?`Approved as ${_corrected[id]}`:"Approved");delete _corrected[id];loadReceipts();loadTracked();refresh()}catch(e){toast(e.message,true)}}
 async function reject(id){try{await api(`/api/payments/${id}/reject`,{method:"POST"});toast("Rejected");loadReceipts();loadTracked();refresh()}catch(e){toast(e.message,true)}}
 async function reverify(id){
   try{const v=await api(`/api/payments/${id}/reverify`,{method:"POST"});
-    if(v.ok){const el=$("#amt"+id);if(el)el.value=(v.amount_cents/100);toast(`✅ ${v.provider}: ${(v.amount_cents/100)} Birr — amount filled`);}
+    if(v.ok){const el=$("#amt"+id);if(el)el.value=(v.amount_cents/100);
+      if(v.corrected){_corrected[id]=v.receipt_id;toast(`✅ ${v.provider}: ${(v.amount_cents/100)} Birr — corrected receipt ${v.receipt_id}. Approve to record it.`);}
+      else{delete _corrected[id];toast(`✅ ${v.provider}: ${(v.amount_cents/100)} Birr — amount filled`);}}
     else if(v.receiver_mismatch)toast("⚠️ Paid to a DIFFERENT account",true);
     else if(v.already_used)toast("⚠️ Receipt already used",true);
     else if(v.manual)toast("Approver is set to Manual-only",true);

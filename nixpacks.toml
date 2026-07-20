@@ -1,8 +1,10 @@
 # Railway/Nixpacks build config.
-# Installs the tesseract OCR binary so the Telebirr-screenshot reader works
-# (pytesseract shells out to `tesseract`). Nix's `tesseract` package bundles the
-# English language data. nixPkgs is the reliable way on Nixpacks; aptPkgs is kept
-# as a fallback. "..." keeps Nixpacks' defaults.
+# - tesseract: OCR binary for the Telebirr-screenshot reader (pytesseract shells out).
+# - nodejs: runs the bundled JS PDF renderer (app/fayda/js_render/render.bundle.js) so
+#   the ID PDF is byte-for-byte the faydapdf-railway output. The bundle is self-contained
+#   (esbuild), so only the Node runtime is needed — no `npm install`.
+# nixPkgs is the reliable way on Nixpacks; aptPkgs is kept as a fallback. "..." keeps
+# Nixpacks' defaults.
 [phases.setup]
-nixPkgs = ["...", "tesseract"]
+nixPkgs = ["...", "tesseract", "nodejs"]
 aptPkgs = ["...", "tesseract-ocr"]

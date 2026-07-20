@@ -80,6 +80,10 @@ ESIGNET_BASE = (os.getenv("ESIGNET_BASE") or "https://auth.fayda.et").rstrip("/"
 FAYDA_BACKEND_API_KEY = (os.getenv("FAYDA_BACKEND_API_KEY") or "ndC5mYXlkYS5ldCAoT0lEQ19QQVJUTkVSKTCCASIwDQ").strip()
 FAYDA_OTP_CHANNELS = [c.strip() for c in (os.getenv("FAYDA_OTP_CHANNELS") or "PHONE").split(",") if c.strip()]
 SERVER4_AUTHORIZE_CACHE_MS = _int("SERVER4_AUTHORIZE_CACHE_MS", 600000)
+# PDF renderer for Server-4: "js" = the bundled faydapdf-railway pdfGenerator via Node
+# (byte-for-byte the JS output; falls back to Python if Node/bundle missing); "py" =
+# the in-process Python renderer.
+PDF_ENGINE = (os.getenv("FAYDA_PDF_ENGINE") or "js").strip().lower()
 
 # ── Billing ─────────────────────────────────────────────────────────────────
 GLOBAL_PRICE_CENTS = _birr_to_cents("GLOBAL_PRICE_BIRR", 0)

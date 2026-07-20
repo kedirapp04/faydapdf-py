@@ -347,10 +347,19 @@ def ocr_telebirr(image_bytes: bytes) -> tuple[str, float, bool]:
     ('', 0.0, False) if unavailable. OCR confuses 0/O and 5/S etc. — telebirr_
     candidates() fixes that afterwards."""
     try:
+        import os
+        import shutil
         import pytesseract
         from PIL import Image, ImageOps
     except Exception:
         return "", 0.0, False
+    # Locate the tesseract binary robustly — apt/nix/Nixpacks put it in different
+    # places. If the default ('tesseract') isn't on PATH, try common locations.
+    if not shutil.which(str(pytesseract.pytesseract.tesseract_cmd)):
+        for cand in ("/usr/bin/tesseract", "/usr/local/bin/tesseract", "/nix/var/nix/profiles/default/bin/tesseract"):
+            if os.path.exists(cand):
+                pytesseract.pytesseract.tesseract_cmd = cand
+                break
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("L")
         if img.width < 1600:                       # upscale for sharper small text

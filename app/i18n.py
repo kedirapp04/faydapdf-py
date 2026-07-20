@@ -190,8 +190,14 @@ CATALOG = {
         "💳 Receiver / ተቀባይ / Fudhataa:\n{recv}")},
     "checking_payment": {"en": "🔎 Checking your payment…", "am": "🔎 ክፍያዎ እየተረጋገጠ ነው…"},
     "reading_screenshot": {"en": "🔎 Reading your screenshot…", "am": "🔎 ስክሪንሾትዎ እየተነበበ ነው…"},
-    "couldnt_read_txn": {"en": "⚠️ Couldn't read the transaction number.\nSend it as text, or a clearer screenshot.",
-                         "am": "⚠️ የግብይት ቁጥሩን ማንበብ አልተቻለም።\nበጽሑፍ ይላኩ፣ ወይም ግልጽ ስክሪንሾት።"},
+    "couldnt_read_txn": {"en": ("⚠️ Couldn't read the receipt automatically.\n"
+                                "Please send the 10-character transaction number (e.g. DGI70RYNL7), "
+                                "the Telebirr receipt link, or the full 127 SMS as text — "
+                                "or try a clearer screenshot."),
+                         "am": ("⚠️ ደረሰኙን በራስ-ሰር ማንበብ አልተቻለም።\n"
+                                "እባክዎ ባለ 10-ቁምፊ transaction number (ለምሳሌ DGI70RYNL7)፣ "
+                                "የTelebirr receipt link፣ ወይም ሙሉ የ127 SMS በጽሑፍ ይላኩ — "
+                                "ወይም ግልጽ ስክሪንሾት ይሞክሩ።")},
     "image_read_fail": {"en": "⚠️ Couldn't read that image. Send the transaction number as text instead.",
                         "am": "⚠️ ያንን ምስል ማንበብ አልተቻለም። ይልቁንም የግብይት ቁጥሩን በጽሑፍ ይላኩ።"},
     "payments_unavailable": {"en": "⚙️ Payments are temporarily unavailable. Please try again shortly.",

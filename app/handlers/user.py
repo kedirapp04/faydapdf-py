@@ -464,6 +464,57 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
     await _notify_admins_payment(m.bot, payment, m.from_user, flag, screenshot_file_id)
 
 
+# ── auto-detect a payment receipt anywhere (link / txn number / 127 SMS) ──────
+# Mirrors faydapdf-railway's isLikelyTelebirrPaymentInput: a trusted receipt URL, or
+# a bare 10-char Telebirr reference (must contain a digit). Lets a user paste a
+# receipt / link / txn at ANY time, without first tapping "Add Payment".
+_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.I)
+_RECEIPT_HOST_RE = re.compile(r"transactioninfo\.ethiotelecom|telebirr|apps\.cbe|cbe\.com\.et", re.I)
+
+
+def _extract_receipt_id(text: str) -> str:
+    t = (text or "").strip().upper()
+    for pat in (r"RECEIPT/([A-Z0-9]{10})",
+                r"[?&](?:ID|RECEIPT|RECEIPTID|TRANSACTION|TRANSACTIONNO)=([A-Z0-9]{10})",
+                r"\b([A-Z0-9]{10})\b"):
+        mt = re.search(pat, t)
+        if mt:
+            return mt.group(1)
+    return ""
+
+
+def _is_telebirr_receipt_id(v: str) -> bool:
+    v = (v or "").strip().upper()
+    return bool(re.fullmatch(r"[A-Z0-9]{10}", v)) and bool(re.search(r"\d", v))
+
+
+def _looks_like_receipt(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    u = _URL_RE.search(t)
+    if u and _RECEIPT_HOST_RE.search(u.group(0)):
+        return True
+    return _is_telebirr_receipt_id(_extract_receipt_id(t))
+
+
+async def _submit_receipt_text(m: Message, text: str) -> bool:
+    """Extract the reference from a bare txn / link / 127 SMS, verify (or fall to
+    manual review) and finalize. Returns False if no reference could be read. Shared
+    by the Add-Balance step and the anytime auto-detect."""
+    # Prefer a token that has BOTH letters and digits (the Telebirr/CBE reference
+    # shape) so an SMS/link doesn't pick a phone number, amount, or a word by mistake.
+    tokens = re.findall(r"\b[A-Z0-9]{8,14}\b", (text or "").strip().upper())
+    mixed = [t for t in tokens if re.search(r"[A-Z]", t) and re.search(r"\d", t)]
+    receipt_id = (mixed or tokens or [""])[0]
+    if not receipt_id:
+        return False
+    wait = await m.answer(i18n.t("checking_payment"))
+    v = await payment_verify.verify(receipt_id) if await payment_verify.any_configured() else {"ok": False}
+    await _finalize_receipt(m, wait, v.get("receipt_id") or receipt_id, v)
+    return True
+
+
 @router.message(Flow.receipt, F.text)
 async def on_receipt(m: Message, state: FSMContext):
     blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments too
@@ -473,75 +524,52 @@ async def on_receipt(m: Message, state: FSMContext):
     if not db_ready():   # payments need the DB — can't record money while it's down
         await state.clear()
         return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
-    # Accept a bare txn number, a receipt link, OR the full Telebirr SMS from 127.
-    # Prefer a token that has BOTH letters and digits (the Telebirr/CBE reference
-    # shape) so an SMS/link doesn't pick a phone number, amount, or a word by mistake.
-    tokens = re.findall(r"\b[A-Z0-9]{8,14}\b", m.text.strip().upper())
-    mixed = [t for t in tokens if re.search(r"[A-Z]", t) and re.search(r"\d", t)]
-    receipt_id = (mixed or tokens or [""])[0]
-    if not receipt_id:
-        return await m.answer(i18n.t("send_txn_short"), reply_markup=kb.cancel_kb())
-    await state.clear()
-    wait = await m.answer(i18n.t("checking_payment"))
-    v = await payment_verify.verify(receipt_id) if await payment_verify.any_configured() else {"ok": False}
-    await _finalize_receipt(m, wait, v.get("receipt_id") or receipt_id, v)
+    if await _submit_receipt_text(m, m.text):
+        await state.clear()
+    else:   # nothing readable — stay in the step so they can try again
+        await m.answer(i18n.t("send_txn_short"), reply_markup=kb.cancel_kb())
 
 
 # ── add-balance via a Telebirr screenshot (OCR → look-alike correction → verify) ─
 @router.message(F.photo)
 async def on_payment_photo(m: Message, state: FSMContext):
+    # A photo is ALWAYS treated as a payment screenshot — in or out of the Add-Balance
+    # step. Downloads never take a photo (the FIN/FAN is typed), so any image the user
+    # sends is a receipt. Mirrors faydapdf-railway: just send the screenshot anytime.
     in_receipt = (await state.get_state()) == Flow.receipt.state
-    if in_receipt:   # HIGH maintenance closes the Add-Balance receipt path too
-        blk = await _maint_block_action(m.from_user.id)
-        if blk:
+    blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments
+    if blk:
+        if in_receipt:
             await state.clear()
-            return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     if not db_ready():   # payments need the DB
         if in_receipt:
             await state.clear()
-            await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
-        return
+        return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
     try:
         u = await users_repo.ensure(m.from_user.id, m.from_user.username)
     except Exception:
         mark_db_down()
-        return
+        return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
     if u["status"] == "blocked" and not config.is_admin(m.from_user.id):
-        return
-    # Outside the Add-Balance step we only react to receipt-looking photos, and only
-    # when an auto-verifier is configured (OCR is pointless without one).
-    if not in_receipt and not await payment_verify.any_configured():
         return
     try:
         bio = await m.bot.download(m.photo[-1].file_id)
         raw = bio.read()
     except Exception:
-        if in_receipt:
-            await m.answer(i18n.t("image_read_fail"), reply_markup=kb.cancel_kb())
-        return
-    wait = await m.answer(i18n.t("reading_screenshot"))
-    txn, amount, is_receipt = await asyncio.to_thread(payment_verify.ocr_telebirr, raw)
-    if not txn:
-        if in_receipt or is_receipt:
-            return await wait.edit_text(i18n.t("couldnt_read_txn"))
-        try:
-            await wait.delete()
-        except Exception:
-            pass
-        return
-    if not in_receipt and not is_receipt:   # idle photo that isn't a receipt → ignore
-        try:
-            await wait.delete()
-        except Exception:
-            pass
-        return
+        return await m.answer(i18n.t("image_read_fail"), reply_markup=kb.main_kb(m.from_user.id))
     await state.clear()
+    wait = await m.answer(i18n.t("reading_screenshot"))
+    txn, amount, _is_receipt = await asyncio.to_thread(payment_verify.ocr_telebirr, raw)
     await wait.edit_text(i18n.t("checking_payment"))
-    if not await payment_verify.any_configured():
-        v = {"ok": False}
-    else:
+    if txn and await payment_verify.any_configured():
         v = await payment_verify.verify_candidates(payment_verify.telebirr_candidates(txn), round((amount or 0) * 100))
-    await _finalize_receipt(m, wait, v.get("receipt_id") or txn, v, screenshot_file_id=m.photo[-1].file_id)
+    else:
+        v = {"ok": False}
+    # If OCR couldn't read a reference, still submit for manual review with the image
+    # attached — never drop a receipt. The admin reads the amount/txn off the photo.
+    receipt_id = v.get("receipt_id") or txn or f"IMG-{m.photo[-1].file_unique_id}"
+    await _finalize_receipt(m, wait, receipt_id, v, screenshot_file_id=m.photo[-1].file_id)
 
 
 async def _ask_format(m: Message, state: FSMContext, fans: list[str], dropped: int = 0) -> None:
@@ -621,6 +649,20 @@ async def on_fan_awaited(m: Message, state: FSMContext):
 @router.message(F.text)
 async def maybe_fan(m: Message, state: FSMContext):
     fans, dropped = _parse_fans(m.text)
+    # Auto-detect a payment receipt (Telebirr link / receipt number / 127 SMS) pasted
+    # at any time — no need to tap Add Payment first (mirrors faydapdf-railway).
+    if not fans and db_ready() and _looks_like_receipt(m.text):
+        blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments
+        if blk:
+            return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
+        try:
+            await users_repo.ensure(m.from_user.id, m.from_user.username)
+        except Exception:
+            mark_db_down()
+            return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
+        await state.clear()
+        if await _submit_receipt_text(m, m.text):
+            return
     # Maintenance: a FIN/FAN is a download attempt (blocked at low+high); any other
     # stray text is a general action (blocked only at high, so the "send a FAN" hint
     # still shows at low).

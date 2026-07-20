@@ -361,13 +361,16 @@ class Server4Provider(FaydaProvider):
                 # Never charge/deliver a dataless PDF — surface an error so the user retries.
                 detail = f"HTTP {cb_status}" if cb_status else (type(cb_err).__name__ if cb_err else "no data")
                 return err(f"Couldn't retrieve your Fayda data — please try again. ({detail})")
-            pdf_bytes, name = pdf_render.render(user)
+            # Rendering is CPU-bound (pypdf + reportlab + PIL). Run it in a worker thread
+            # so it NEVER blocks the async event loop — otherwise one user's render
+            # freezes every other bot/update (14–23s handler durations).
+            pdf_bytes, name = await asyncio.to_thread(pdf_render.render, user)
             # Screenshots (front/back/photo-qr) are best-effort — a failure here must
             # NEVER stop the PDF from being delivered.
             shots = []
             try:
                 from . import screenshot_render
-                shots = screenshot_render.render(user)
+                shots = await asyncio.to_thread(screenshot_render.render, user)
             except Exception as e:
                 print("[screenshot_render]", e)
             return ok(pdf=pdf_bytes, filename=f"{name}.pdf", screenshots=shots)

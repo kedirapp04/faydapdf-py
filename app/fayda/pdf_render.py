@@ -186,10 +186,22 @@ def _draw_fields(c, data: dict) -> None:
                 pass
 
 
+_TEMPLATE_CACHE: bytes | None = None
+
+
+def _template_bytes() -> bytes:
+    """Read the 1 MB template once, then serve from memory (avoids a disk read per
+    render — renders run concurrently in worker threads under load)."""
+    global _TEMPLATE_CACHE
+    if _TEMPLATE_CACHE is None:
+        _TEMPLATE_CACHE = _TEMPLATE.read_bytes()
+    return _TEMPLATE_CACHE
+
+
 def _render_template(data: dict) -> bytes:
     """Stamp the fields onto the official template (page 0) via a reportlab overlay."""
     from pypdf import PdfReader, PdfWriter
-    reader = PdfReader(str(_TEMPLATE))
+    reader = PdfReader(io.BytesIO(_template_bytes()))
     page = reader.pages[0]
     w, h = float(page.mediabox.width), float(page.mediabox.height)
 

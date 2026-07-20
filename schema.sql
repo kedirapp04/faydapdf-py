@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   telegram_id           BIGINT PRIMARY KEY,
   username              TEXT,
   status                TEXT   NOT NULL DEFAULT 'active',    -- active | pending | blocked
-  billing_mode          TEXT   NOT NULL DEFAULT 'counter',   -- counter | prepaid | postpaid
+  billing_mode          TEXT   NOT NULL DEFAULT 'prepaid',   -- counter | prepaid | postpaid
   balance_cents         BIGINT NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),           -- cached; always == last ledger balance_after
   owed_cents            BIGINT NOT NULL DEFAULT 0 CHECK (owed_cents >= 0),           -- postpaid running bill
   credit_limit_cents    BIGINT NOT NULL DEFAULT 0,
@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS users (
   approved_at           TIMESTAMPTZ,
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- New users default to prepaid (only affects rows inserted from now on, not existing members).
+ALTER TABLE users ALTER COLUMN billing_mode SET DEFAULT 'prepaid';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_bot_id BIGINT;  -- backfill existing DBs
 ALTER TABLE users ADD COLUMN IF NOT EXISTS delivery_pref TEXT NOT NULL DEFAULT 'both';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT;

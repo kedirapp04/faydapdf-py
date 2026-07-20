@@ -27,8 +27,8 @@ async def ensure(user_id, username: str | None = None) -> dict:
     insert pays the extra bonus transaction."""
     uid = int(user_id)
     row = await pool().fetchrow(
-        """INSERT INTO users (telegram_id, username)
-           VALUES ($1, $2)
+        """INSERT INTO users (telegram_id, username, billing_mode)
+           VALUES ($1, $2, 'prepaid')
            ON CONFLICT (telegram_id) DO UPDATE
              SET username = COALESCE(EXCLUDED.username, users.username)
            RETURNING *, (xmax = 0) AS _inserted""",

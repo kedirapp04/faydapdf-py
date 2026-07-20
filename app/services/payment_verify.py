@@ -17,10 +17,46 @@ import asyncio
 
 import aiohttp
 
-from .. import config
+from .. import config, i18n
 from ..repo import settings as settings_repo
 
 BANK_LABELS = {"telebirr": "Telebirr", "cbe": "CBE"}
+
+# Which verifier auto-approves receipts. "auto" tries every configured provider in
+# order (the original behaviour); a specific provider restricts to just that one;
+# "manual" disables auto-approve entirely so every receipt goes to admin review.
+APPROVERS = ("auto", "verifypayment", "leul", "relay", "manual")
+APPROVER_LABELS = {
+    "auto": "Auto — all verifiers",
+    "verifypayment": "Auto — VerifyPayment",
+    "leul": "Auto — Leul",
+    "relay": "Auto — Phone relay",
+    "manual": "Manual only",
+}
+APPROVER_CYCLE = {"auto": "verifypayment", "verifypayment": "leul",
+                  "leul": "relay", "relay": "manual", "manual": "auto"}
+
+
+async def approver() -> str:
+    try:
+        v = await settings_repo.get("approver", "auto")
+    except Exception:
+        return "auto"
+    return v if v in APPROVERS else "auto"
+
+
+async def set_approver(v: str) -> str:
+    v = v if v in APPROVERS else "auto"
+    await settings_repo.set("approver", v)
+    return v
+
+
+async def show_autoverify() -> bool:
+    """Whether to advertise 'payments auto-verified' in the pay-to instructions."""
+    try:
+        return await settings_repo.get_bool("pay_show_autoverify", False)
+    except Exception:
+        return False
 
 
 def _amount_to_cents(v) -> int:
@@ -48,25 +84,69 @@ async def receiver_for(bank: str) -> tuple[str, str]:
     return name.strip(), acct.strip()
 
 
+async def telebirr_receivers() -> list[dict]:
+    """All configured Telebirr receivers: [{name, account, show, verify}]. Falls back
+    to the single legacy pay_telebirr_name/account if no list is set."""
+    import json
+    raw = await settings_repo.get("pay_telebirr_list")
+    if raw:
+        try:
+            out = [{"name": str(r.get("name", "")).strip(), "account": str(r.get("account", "")).strip(),
+                    "show": bool(r.get("show", True)), "verify": bool(r.get("verify", True))}
+                   for r in json.loads(raw) if (r.get("name") or r.get("account"))]
+            if out:
+                return out
+        except Exception:
+            pass
+    n, a = await receiver_for("telebirr")
+    return [{"name": n, "account": a, "show": True, "verify": True}] if (n or a) else []
+
+
+async def receiver_block() -> str:
+    """Just the bullet lines of every SHOWN receiver, e.g.
+       '• Telebirr: Kedir Seyid Aman — 0938823882'. Used in the Add-Payment message."""
+    lines = []
+    for r in await telebirr_receivers():
+        if r["show"] and (r["name"] or r["account"]):
+            lines.append(f"• {BANK_LABELS['telebirr']}: " + " — ".join(p for p in (r["name"], r["account"]) if p))
+    cn, ca = await receiver_for("cbe")
+    if cn or ca:
+        lines.append(f"• {BANK_LABELS['cbe']}: " + " — ".join(p for p in (cn, ca) if p))
+    return "\n".join(lines)
+
+
 async def all_receivers() -> dict:
-    """{bank: (name, account)} for every bank that has anything configured."""
+    """{bank: (name, account)} — the PRIMARY receiver per bank (first shown Telebirr)."""
     out = {}
-    for b in ("telebirr", "cbe"):
-        n, a = await receiver_for(b)
-        if n or a:
-            out[b] = (n, a)
+    tb = [r for r in await telebirr_receivers() if r["show"]] or await telebirr_receivers()
+    if tb:
+        out["telebirr"] = (tb[0]["name"], tb[0]["account"])
+    cn, ca = await receiver_for("cbe")
+    if cn or ca:
+        out["cbe"] = (cn, ca)
     return out
 
 
 async def instructions() -> str:
-    """User-facing 'pay to' text, showing every configured bank account."""
-    recs = await all_receivers()
-    if not recs:
-        return ""
+    """User-facing 'pay to' text — lists every shown Telebirr receiver + CBE."""
     lines = ["💳 Pay to one of these accounts:"]
-    for b, (n, a) in recs.items():
-        detail = " — ".join(p for p in (n, a) if p)
-        lines.append(f"• {BANK_LABELS.get(b, b)}: {detail}")
+    any_shown = False
+    for r in await telebirr_receivers():
+        if r["show"] and (r["name"] or r["account"]):
+            detail = " — ".join(p for p in (r["name"], r["account"]) if p)
+            lines.append(f"• {BANK_LABELS['telebirr']}: {detail}")
+            any_shown = True
+    cn, ca = await receiver_for("cbe")
+    if cn or ca:
+        lines.append(f"• {BANK_LABELS['cbe']}: " + " — ".join(p for p in (cn, ca) if p))
+        any_shown = True
+    if not any_shown:
+        return ""
+    # Optional confidence line: only advertise auto-verify when it's actually on AND
+    # a verifier is configured — never promise instant credit we can't deliver.
+    if await show_autoverify() and (await approver()) != "manual" and await any_configured():
+        lines.append("")
+        lines.append(i18n.t("autoverify_note"))
     return "\n".join(lines)
 
 
@@ -86,18 +166,30 @@ async def _post(url: str, headers: dict, body: dict, timeout: int) -> tuple[int,
             return r.status, (data or {})
 
 
+# ── verifypayment config (admin-editable; settings override env) ─────────────
+async def vp_base_url() -> str:
+    v = await settings_repo.get("vp_base_url")
+    return (v or "").strip() or config.VERIFYPAYMENT_BASE_URL
+
+
+async def vp_api_key() -> str:
+    v = await settings_repo.get("vp_api_key")
+    return (v or "").strip() or config.VERIFYPAYMENT_API_KEY
+
+
 # ── providers ────────────────────────────────────────────────────────────────
 async def _verifypayment(bank: str, receipt: str, recv_name: str = "", recv_acct: str = "") -> dict | None:
-    if not config.VERIFYPAYMENT_API_KEY:
+    key = await vp_api_key()
+    if not key:
         return None
+    base = (await vp_base_url()).rstrip("/")
     body = {"bank": bank, "url": receipt}
     if recv_name:
         body["receiver_name"] = recv_name
     if recv_acct:
         body["receiver_account"] = recv_acct
     try:
-        status, d = await _post(f"{config.VERIFYPAYMENT_BASE_URL}/api/check",
-                                {"X-API-Key": config.VERIFYPAYMENT_API_KEY}, body, 15)
+        status, d = await _post(f"{base}/api/check", {"X-API-Key": key}, body, 15)
     except (aiohttp.ClientError, asyncio.TimeoutError):
         return _norm(False, "verifypayment", transient=True, error="unreachable")
     data = d.get("data") or {}
@@ -160,8 +252,8 @@ async def _relay(receipt: str, recv_name: str = "", recv_acct: str = "") -> dict
                  error=str(d.get("error") or "not found"), status=status)
 
 
-def any_configured() -> bool:
-    return bool(config.VERIFYPAYMENT_API_KEY or config.LEUL_VERIFY_API_KEY or config.RELAY_VERIFY_API_KEY)
+async def any_configured() -> bool:
+    return bool((await vp_api_key()) or config.LEUL_VERIFY_API_KEY or config.RELAY_VERIFY_API_KEY)
 
 
 def _norm_name(s) -> str:
@@ -190,6 +282,27 @@ def receiver_ok(res: dict, want_name: str, want_acct: str) -> bool:
     return True
 
 
+async def receiver_ok_any(res: dict, bank: str) -> bool:
+    """Telebirr: accept if the receipt matches ANY receiver flagged for verification.
+    CBE: match the single configured receiver. Fails open only when nothing is set."""
+    if bank == "telebirr":
+        recs = [r for r in await telebirr_receivers() if r["verify"] and (r["name"] or r["account"])]
+        if not recs:
+            return True
+        return any(receiver_ok(res, r["name"], r["account"]) for r in recs)
+    n, a = await receiver_for(bank)
+    return receiver_ok(res, n, a)
+
+
+async def _primary_receiver(bank: str) -> tuple[str, str]:
+    if bank == "telebirr":
+        recs = [r for r in await telebirr_receivers() if r["verify"]] or await telebirr_receivers()
+        if recs:
+            return recs[0]["name"], recs[0]["account"]
+        return "", ""
+    return await receiver_for(bank)
+
+
 async def verify(receipt_id: str) -> dict:
     """Try each configured provider IN ORDER; return the first *acceptable* success
     and stop (so only one provider is hit for a good receipt). A success is accepted
@@ -197,14 +310,19 @@ async def verify(receipt_id: str) -> dict:
     receipt wasn't already used — otherwise it falls through to manual admin review.
     Returns {ok, provider, receipt_id, amount_cents, receiver_*, status, bank} or
     {ok:False, error, ...}."""
+    appr = await approver()
+    if appr == "manual":   # admin chose manual-only → never auto-approve
+        return _norm(False, "manual", error="manual approval only", manual=True)
     bank = detect_bank(receipt_id)
-    want_name, want_acct = await receiver_for(bank)
+    want_name, want_acct = await _primary_receiver(bank)   # provider filter hint
     last = _norm(False, "none", error="No verifier configured.", transient=False)
-    order = [
-        lambda: _verifypayment(bank, receipt_id, want_name, want_acct),
-        lambda: _leul(receipt_id),
-        lambda: _relay(receipt_id, want_name, want_acct),
+    all_providers = [
+        ("verifypayment", lambda: _verifypayment(bank, receipt_id, want_name, want_acct)),
+        ("leul", lambda: _leul(receipt_id)),
+        ("relay", lambda: _relay(receipt_id, want_name, want_acct)),
     ]
+    # "auto" tries all in order; a specific approver restricts to that one provider.
+    order = [mk for name, mk in all_providers if appr == "auto" or name == appr]
     for make in order:
         res = await make()
         if res is None:
@@ -213,7 +331,7 @@ async def verify(receipt_id: str) -> dict:
             if res.get("already_used"):
                 last = _norm(False, res["provider"], error="receipt already used", already_used=True)
                 continue
-            if not receiver_ok(res, want_name, want_acct):
+            if not await receiver_ok_any(res, bank):   # match ANY configured receiver
                 last = _norm(False, res["provider"], error="paid to a different account", receiver_mismatch=True)
                 continue
             res["bank"] = bank

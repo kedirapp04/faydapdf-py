@@ -1,5 +1,9 @@
 """User records."""
 from ..db import pool
+from . import wallet
+from . import settings as settings_repo
+
+DEFAULT_WELCOME_BONUS_CENTS = 2000   # 20 Birr, admin-overridable via settings key
 
 
 async def get(user_id) -> dict | None:
@@ -7,19 +11,39 @@ async def get(user_id) -> dict | None:
     return dict(row) if row else None
 
 
+async def _welcome_bonus_cents() -> int:
+    v = await settings_repo.get("welcome_bonus_cents")   # cached read
+    if v is not None and str(v).lstrip("-").isdigit():
+        return max(0, int(v))
+    return DEFAULT_WELCOME_BONUS_CENTS
+
+
 async def ensure(user_id, username: str | None = None) -> dict:
-    """Create the user if new (active), else keep the username in sync."""
+    """Create the user if new (active), else keep the username in sync. A brand-new
+    user is granted the welcome bonus INTO THE BONUS WALLET (one-time, only on the
+    real INSERT — existing users are never re-granted).
+
+    The common case (an EXISTING user) is a single round-trip; only a first-ever
+    insert pays the extra bonus transaction."""
     uid = int(user_id)
-    async with pool().acquire() as conn:
-        row = await conn.fetchrow(
-            """INSERT INTO users (telegram_id, username)
-               VALUES ($1, $2)
-               ON CONFLICT (telegram_id) DO UPDATE
-                 SET username = COALESCE(EXCLUDED.username, users.username)
-               RETURNING *""",
-            uid, username,
-        )
-    return dict(row)
+    row = await pool().fetchrow(
+        """INSERT INTO users (telegram_id, username)
+           VALUES ($1, $2)
+           ON CONFLICT (telegram_id) DO UPDATE
+             SET username = COALESCE(EXCLUDED.username, users.username)
+           RETURNING *, (xmax = 0) AS _inserted""",
+        uid, username,
+    )
+    if row["_inserted"]:                       # xmax=0 ⇒ this call inserted the row
+        wb = await _welcome_bonus_cents()
+        if wb > 0:
+            async with pool().acquire() as conn:
+                async with conn.transaction():
+                    await wallet.credit_bonus(conn, uid, wb, reason="welcome_bonus")
+            row = await pool().fetchrow("SELECT * FROM users WHERE telegram_id=$1", uid)
+    d = dict(row)
+    d.pop("_inserted", None)
+    return d
 
 
 async def set_status(user_id, status: str) -> None:
@@ -64,8 +88,9 @@ async def count() -> int:
 
 
 async def page(status: str | None, q: str | None, limit: int, offset: int,
-               is_vip: bool | None = None, mode: str | None = None) -> tuple[list[dict], int]:
-    """Paginated + optional filters (status / VIP / billing mode) + search
+               is_vip: bool | None = None, mode: str | None = None,
+               bonus: str | None = None) -> tuple[list[dict], int]:
+    """Paginated + optional filters (status / VIP / billing mode / bonus) + search
     (username or id). Returns (rows, total)."""
     where, args = [], []
     if status:
@@ -77,6 +102,11 @@ async def page(status: str | None, q: str | None, limit: int, offset: int,
     if mode:
         args.append(mode)
         where.append(f"billing_mode = ${len(args)}")
+    if bonus == "wallet":                 # holds an unspent separate bonus wallet
+        where.append("bonus_balance_cents > 0")
+    elif bonus == "unspent":              # has balance but was never charged (never downloaded)
+        where.append("balance_cents > 0 AND NOT EXISTS "
+                     "(SELECT 1 FROM downloads d WHERE d.user_id = users.telegram_id)")
     if q:
         term = q.strip().lstrip("@")
         if term.isdigit():
@@ -86,10 +116,13 @@ async def page(status: str | None, q: str | None, limit: int, offset: int,
             args.append(f"%{term}%")
             where.append(f"username ILIKE ${len(args)}")
     clause = ("WHERE " + " AND ".join(where)) if where else ""
-    total = await pool().fetchval(f"SELECT count(*)::int FROM users {clause}", *args)
-    rows = await pool().fetch(
-        f"SELECT * FROM users {clause} ORDER BY created_at DESC LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
-        *args, limit, offset,
+    # count + page fetch are independent → run concurrently (halves wall-time)
+    import asyncio
+    total, rows = await asyncio.gather(
+        pool().fetchval(f"SELECT count(*)::int FROM users {clause}", *args),
+        pool().fetch(
+            f"SELECT * FROM users {clause} ORDER BY created_at DESC LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
+            *args, limit, offset),
     )
     return [dict(r) for r in rows], total
 

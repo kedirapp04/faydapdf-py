@@ -1,8 +1,22 @@
-"""Dashboard aggregate stats — one round-trip, small payload (fast to poll live)."""
+"""Dashboard aggregate stats — one round-trip, small payload.
+
+The admin UI polls this every few seconds, and the counts scan large tables
+(users, downloads), so the result is cached in memory for a few seconds. Rapid
+polls and tab switches then serve from RAM instead of re-scanning the DB.
+"""
+import time
+
 from ..db import pool
 
+_cache: dict | None = None
+_at: float = 0.0
+_TTL = 4.0
 
-async def dashboard() -> dict:
+
+async def dashboard(force: bool = False) -> dict:
+    global _cache, _at
+    if not force and _cache is not None and (time.monotonic() - _at) <= _TTL:
+        return _cache
     row = await pool().fetchrow(
         """
         SELECT
@@ -18,4 +32,6 @@ async def dashboard() -> dict:
              WHERE status='approved' AND decided_at::date=current_date)                AS topups_today_cents
         """
     )
-    return dict(row)
+    _cache = dict(row)
+    _at = time.monotonic()
+    return _cache

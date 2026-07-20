@@ -3,461 +3,696 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>faydapdf-py · Admin</title>
+<title>faydapdf-py · Ops Console</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-  :root {
-    --bg: #0f111a;
-    --panel-bg: rgba(25, 28, 41, 0.6);
-    --panel-border: rgba(255, 255, 255, 0.08);
-    --line: rgba(255, 255, 255, 0.08);
-    --txt: #f1f5f9;
-    --mut: #94a3b8;
-    --ac: #6366f1;
-    --ac-hover: #4f46e5;
-    --ac2: #10b981;
-    --err: #ef4444;
-    --warn: #f59e0b;
-    --chip: rgba(255, 255, 255, 0.05);
-    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  :root{
+    --ink:#13211d; --mut:#5c6a65; --line:rgba(19,33,29,.14); --paper:rgba(255,255,250,.92);
+    --panel:rgba(255,255,255,.78); --field:rgba(255,255,255,.9); --brand:#0f7f6e; --brand2:#096052;
+    --sand:#f4e8d3; --mint:#d4efe4; --sun:#d99539; --danger:#c64d3c;
+    --shadow:0 18px 44px rgba(32,53,44,.13); --soft:0 8px 22px rgba(31,56,46,.08);
+    --r:16px; --r2:12px;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: var(--bg);
-    color: var(--txt);
-    background-image: radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 400px),
-                      radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.05), transparent 400px);
-    background-attachment: fixed;
-    min-height: 100vh;
-  }
-  a { color: var(--ac); text-decoration: none; transition: 0.2s; }
-  a:hover { color: var(--ac-hover); }
-  
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 12px; letter-spacing: -0.02em; }
-  
-  .live {
-    width: 10px; height: 10px; border-radius: 50%; background: var(--ac2);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); animation: pulse 2s infinite;
-  }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
-    70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-  }
-  
-  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-  
-  .btn {
-    background: var(--ac); color: #fff; border: 0; border-radius: 8px;
-    padding: 8px 16px; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500;
-    cursor: pointer; transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  }
-  .btn:hover:not(:disabled) { background: var(--ac-hover); transform: translateY(-1px); box-shadow: 0 4px 6px rgba(0,0,0,0.15); }
-  .btn:active:not(:disabled) { transform: translateY(0); }
-  .btn.sec { background: var(--chip); color: var(--txt); border: 1px solid var(--line); box-shadow: none; }
-  .btn.sec:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
-  .btn.warn { background: rgba(245, 158, 11, 0.15); color: var(--warn); border: 1px solid rgba(245, 158, 11, 0.3); }
-  .btn.warn:hover:not(:disabled) { background: rgba(245, 158, 11, 0.25); }
-  .btn.err { background: rgba(239, 68, 68, 0.15); color: var(--err); border: 1px solid rgba(239, 68, 68, 0.3); }
-  .btn.err:hover:not(:disabled) { background: rgba(239, 68, 68, 0.25); }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .card {
-    background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px;
-    box-shadow: var(--glass-shadow); transition: transform 0.2s;
-  }
-  .card:hover { transform: translateY(-2px); }
-  .card .k { color: var(--mut); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-  .card .v { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
-  
-  .panel {
-    background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--panel-border); border-radius: 16px; padding: 20px; margin-bottom: 24px;
-    box-shadow: var(--glass-shadow);
-  }
-  .panel h2 { font-size: 15px; font-weight: 600; margin: 0 0 16px; display: flex; align-items: center; justify-content: space-between; }
-  
-  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  
-  input, select {
-    background: rgba(0,0,0,0.2); border: 1px solid var(--line); color: var(--txt);
-    border-radius: 8px; padding: 8px 12px; font-family: inherit; font-size: 13px;
-    transition: all 0.2s; outline: none;
-  }
-  input:focus, select:focus { border-color: var(--ac); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
-  input.sm { width: 100px; }
-  
-  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-  th, td { text-align: left; padding: 12px; vertical-align: middle; border-bottom: 1px solid var(--line); }
-  th { color: var(--mut); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; cursor: pointer; user-select: none; transition: color 0.2s; }
-  th:hover { color: var(--txt); }
-  th.sort-asc::after { content: " ↑"; opacity: 0.7; }
-  th.sort-desc::after { content: " ↓"; opacity: 0.7; }
-  tbody tr { transition: background 0.2s; }
-  tbody tr:hover { background: rgba(255,255,255,0.02); }
-  
-  .tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; background: var(--chip); color: var(--mut); display: inline-block; }
-  .tag.ok { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-  .tag.bad { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-  .tag.vip { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-  
-  .muted { color: var(--mut); }
-  .scroll { overflow-x: auto; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,0.1); }
-  
-  .toast {
-    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
-    background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 20px;
-    font-weight: 500; font-size: 14px; color: #fff; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    opacity: 0; pointer-events: none; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  .toast.err { border-left: 4px solid var(--err); }
-  .toast.ok { border-left: 4px solid var(--ac2); }
-  
-  /* login */
-  #login { max-width: 380px; margin: 15vh auto; text-align: center; background: var(--panel-bg); backdrop-filter: blur(12px); padding: 32px; border-radius: 20px; border: 1px solid var(--panel-border); box-shadow: var(--glass-shadow); }
-  #login h1 { justify-content: center; margin-bottom: 24px; font-size: 24px; }
-  #login input { width: 100%; margin: 0 0 16px; padding: 12px; font-size: 15px; }
-  #login .btn { padding: 12px; font-size: 15px; width: 100%; }
-  
-  .hide { display: none; }
-  .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 16px; }
-  details.u summary { cursor: pointer; list-style: none; display: inline-block; }
-  details.u summary::-webkit-details-marker { display: none; }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.55 'Inter',system-ui,Segoe UI,Roboto,sans-serif;color:var(--ink);min-height:100vh;
+    background:
+      radial-gradient(circle at 18% 12%,rgba(212,239,228,.9),transparent 32%),
+      radial-gradient(circle at 86% 16%,rgba(244,232,211,.85),transparent 28%),
+      linear-gradient(180deg,#f7f2ea 0%,#f6f7f1 42%,#eef5f0 100%);
+    background-attachment:fixed}
+  .wrap{max-width:1140px;margin:0 auto;padding:24px 18px 80px}
+  h1{font-size:21px;font-weight:700;margin:0;display:flex;align-items:center;gap:10px;letter-spacing:-.01em}
+  h2{font-size:15px;margin:0 0 14px;color:var(--brand2)}
+  .live{width:9px;height:9px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 0 rgba(15,127,110,.5);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(15,127,110,.4)}70%{box-shadow:0 0 0 8px rgba(15,127,110,0)}100%{box-shadow:0 0 0 0 rgba(15,127,110,0)}}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:10px;flex-wrap:wrap}
+  .btn{background:var(--brand);color:#fff;border:0;border-radius:10px;padding:8px 15px;font:inherit;font-weight:600;cursor:pointer;transition:.15s;box-shadow:var(--soft)}
+  .btn:hover:not(:disabled){background:var(--brand2);transform:translateY(-1px)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.sec{background:var(--field);color:var(--ink);border:1px solid var(--line);box-shadow:none}
+  .btn.sec:hover:not(:disabled){background:#fff}
+  .btn.err{background:rgba(198,77,60,.12);color:var(--danger);border:1px solid rgba(198,77,60,.3);box-shadow:none}
+  .btn.sm{padding:5px 11px;font-size:12px;border-radius:8px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r2);padding:14px 15px;box-shadow:var(--soft)}
+  .card .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+  .card .v{font-size:22px;font-weight:800;margin-top:3px;color:var(--brand2)}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+  .tab{background:var(--field);border:1px solid var(--line);color:var(--mut);padding:9px 16px;font:inherit;font-weight:600;cursor:pointer;border-radius:12px}
+  .tab:hover{color:var(--ink)}
+  .tab.on{color:#fff;background:var(--brand);border-color:var(--brand)}
+  .panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:20px;box-shadow:var(--shadow)}
+  .hide{display:none!important}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,textarea{background:var(--field);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:8px 12px;font:inherit;outline:none}
+  input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,127,110,.12)}
+  input.sm{width:100px}
+  textarea{width:100%;min-height:130px;resize:vertical}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{color:var(--mut);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.02em}
+  tbody tr:hover{background:rgba(15,127,110,.04)}
+  code{background:var(--mint);padding:1px 6px;border-radius:6px;font-size:12px}
+  .tag{font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--field);color:var(--mut);border:1px solid var(--line)}
+  .tag.ok{background:var(--mint);color:var(--brand2);border-color:transparent}
+  .tag.bad{background:rgba(198,77,60,.14);color:var(--danger);border-color:transparent}
+  .tag.vip{background:rgba(217,149,57,.16);color:#a9701f;border-color:transparent}
+  .tag.pend{background:rgba(217,149,57,.16);color:#a9701f;border-color:transparent}
+  .muted{color:var(--mut)}
+  .scroll{overflow-x:auto;border-radius:10px}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#fff;color:var(--ink);
+    border:1px solid var(--line);border-radius:12px;padding:11px 18px;font-weight:600;opacity:0;pointer-events:none;transition:.3s;box-shadow:var(--shadow)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.toast.err{border-left:4px solid var(--danger)}
+  .bar{height:9px;border-radius:6px;background:var(--mint);overflow:hidden;margin:10px 0}
+  .bar>div{height:100%;background:var(--brand);width:0;transition:width .3s}
+  details.u summary{cursor:pointer;list-style:none}details.u summary::-webkit-details-marker{display:none}
+  .divider{border-top:1px solid var(--line);margin:16px 0}
+  .baltxt{cursor:pointer}
+  #login{max-width:390px;margin:14vh auto;text-align:center;background:var(--paper);padding:34px;border-radius:22px;border:1px solid var(--line);box-shadow:var(--shadow)}
+  #login input{width:100%;margin:14px 0;padding:12px}#login .btn{width:100%;padding:12px}
+  .eyebrow{color:var(--brand);font-weight:700;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+  .modal{position:fixed;inset:0;background:rgba(19,33,29,.42);display:flex;align-items:flex-start;justify-content:center;padding:38px 14px;z-index:60;overflow-y:auto}
+  .modalCard{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:22px;box-shadow:var(--shadow);max-width:760px;width:100%}
+  .chk{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--mut);cursor:pointer;user-select:none}
+  .mini{font-size:11px;color:var(--mut);margin:10px 0 4px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+  .mgmt{margin-top:10px;padding:14px;background:var(--field);border:1px solid var(--line);border-radius:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+  .mgmt .grp{min-width:0}
+  .mgmt .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:700;margin-bottom:6px}
+  .mgmt .fld{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .mgmt input.sm{width:88px}
+  .mgmt .chk{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 9px}
 </style>
 </head>
 <body>
 
-<!-- Login -->
 <div id="login">
-  <h1>🛠 faydapdf-py admin</h1>
+  <p class="eyebrow">Secure management UI</p>
+  <h1 style="justify-content:center">🛠 Fayda Ops Console</h1>
   <input id="pw" type="password" placeholder="Admin password" onkeydown="if(event.key==='Enter')doLogin()" />
-  <button class="btn" onclick="doLogin()">Sign in</button>
-  <div id="loginErr" class="muted" style="margin-top: 16px; color: var(--err); font-size: 13px;"></div>
+  <button class="btn" onclick="doLogin()">Open dashboard</button>
+  <div id="loginErr" class="muted" style="margin-top:12px;color:var(--danger)"></div>
 </div>
 
-<!-- Dashboard -->
 <div id="dash" class="wrap hide">
   <div class="top">
-    <h1><span class="live" id="liveDot"></span> faydapdf-py <span class="muted" style="font-size: 14px; font-weight: 500;">admin</span></h1>
-    <button class="btn sec" onclick="logout()">Logout</button>
+    <h1><span class="live" id="liveDot"></span> Fayda Ops Console <span class="muted" style="font-size:13px;font-weight:500">faydapdf-py</span></h1>
+    <div class="row">
+      <button class="btn sec sm" id="refreshBtn" onclick="refreshAll()">🔄 Refresh</button>
+      <button class="btn sec sm" id="balBtn" onclick="toggleBal()">👁 Hide totals</button>
+      <button class="btn sec sm" onclick="logout()">Logout</button>
+    </div>
   </div>
 
   <div class="cards" id="cards"></div>
 
-  <div class="panel">
-    <h2>⚙️ Settings</h2>
-    <div class="row">
-      <span class="muted">Fayda mode:</span>
-      <button class="btn sec" id="modeBtn" onclick="toggleMode()">…</button>
-      <span class="muted" style="margin-left: 16px">Service:</span>
-      <button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
-      <span class="muted" style="margin-left: 16px">Global price (Birr):</span>
-      <input class="sm" id="gprice" type="number" step="0.01" min="0" />
-      <button class="btn" onclick="saveGprice()">Save</button>
+  <div class="tabs">
+    <button class="tab on" data-tab="users" onclick="showTab('users')">👥 Users</button>
+    <button class="tab" data-tab="broadcast" onclick="showTab('broadcast')">📢 Broadcast</button>
+    <button class="tab" data-tab="receipts" onclick="showTab('receipts')">🧾 Receipts</button>
+    <button class="tab" data-tab="downloads" onclick="showTab('downloads')">📥 Downloads</button>
+    <button class="tab" data-tab="billing" onclick="showTab('billing')">⚙️ Billing</button>
+  </div>
+
+  <div class="panel tabpanel" id="p-users">
+    <div class="row" style="margin-bottom:12px">
+      <input id="q" placeholder="Search username or id… (auto)" oninput="deb(loadUsers)" />
+      <select id="statusF" onchange="loadUsers(1)"><option value="">All statuses</option><option value="active">active</option><option value="blocked">blocked</option></select>
+      <select id="vipF" onchange="loadUsers(1)"><option value="">All users</option><option value="1">VIP only</option><option value="0">Non-VIP</option></select>
+      <select id="modeF" onchange="loadUsers(1)"><option value="">All modes</option><option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option></select>
+      <select id="bonusF" onchange="loadUsers(1)"><option value="">Any bonus</option><option value="wallet">Has bonus wallet</option><option value="unspent">Never charged (holds balance)</option></select>
     </div>
-    <div class="row" style="margin-top: 12px">
-      <span class="muted">Database:</span>
-      <span id="dbStat" class="tag">…</span>
-      <span class="muted" style="margin-left: 16px">When DB is down:</span>
-      <select id="dbPolicy" onchange="saveDbPolicy()">
-        <option value="refuse">Refuse (block users)</option>
-        <option value="free">Serve downloads free</option>
-        <option value="fallback">Serve free (fallback)</option>
+    <div class="scroll"><table id="usrTbl"><thead><tr><th>User</th><th>Status</th><th>Mode</th><th>Balance</th><th>Price</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div class="pager" id="usrPager"></div>
+  </div>
+
+  <div class="panel tabpanel hide" id="p-broadcast">
+    <h2>📢 Broadcast</h2>
+    <div class="row" style="margin-bottom:8px">
+      <span class="muted">✉️ Single user (DM):</span>
+      <input class="sm" style="width:150px" id="bcUser" placeholder="Telegram ID" oninput="bcCount()">
+      <button class="btn sec sm" onclick="$('#bcUser').value='';bcCount()">Clear</button>
+      <span class="muted" style="font-size:12px">Fill to DM one user; leave empty to use the segment/filters below.</span>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <span class="muted">Segment:</span>
+      <select id="bcSeg" onchange="bcCount()">
+        <option value="all">All users</option><option value="active">Active</option>
+        <option value="vip">VIP only</option><option value="with_balance">With balance</option>
+        <option value="charged">Charged (paid ≥1)</option>
+        <option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
       </select>
+      <span class="tag" id="bcCount">…</span>
     </div>
-    <div style="border-top: 1px solid var(--line); margin: 16px 0"></div>
-    <div class="muted" style="margin-bottom: 12px; font-size: 13px;">💳 Payment accounts — shown to users & used to auto-verify receipts</div>
-    <div class="row" style="margin-bottom: 12px">
-      <span class="muted" style="width: 70px; font-weight: 500;">Telebirr</span>
-      <input id="tb_name" placeholder="Receiver name" />
-      <input id="tb_acct" placeholder="Account / phone" />
+    <div class="mini">Advanced filters (optional, AND-combined)</div>
+    <div class="row" style="margin-bottom:8px">
+      <input class="sm" style="width:120px" id="bcTag" placeholder="tag =" oninput="deb2(bcCount)">
+      <input class="sm" style="width:130px" id="bcExTag" placeholder="tag ≠ (exclude)" oninput="deb2(bcCount)">
+      <input class="sm" style="width:110px" id="bcRole" placeholder="role =" oninput="deb2(bcCount)">
+      <input class="sm" id="bcMin" type="number" step="0.01" placeholder="min bal" oninput="deb2(bcCount)">
+      <input class="sm" id="bcMax" type="number" step="0.01" placeholder="max bal" oninput="deb2(bcCount)">
     </div>
-    <div class="row" style="margin-bottom: 16px">
-      <span class="muted" style="width: 70px; font-weight: 500;">CBE</span>
-      <input id="cbe_name" placeholder="Receiver name" />
-      <input id="cbe_acct" placeholder="Account number" />
+    <textarea id="bcText" placeholder="Type the announcement…"></textarea>
+    <div class="row" style="margin-top:8px">
+      <span class="muted">Format:</span>
+      <select id="bcParse"><option value="">Plain text</option><option value="HTML">HTML</option><option value="Markdown">Markdown</option></select>
+      <span class="muted" style="margin-left:8px">Buttons:</span>
+      <input id="bcBtns" style="flex:1;min-width:220px" placeholder="Text | https://url ; Text2 | https://url2">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="bcTitle" style="flex:1;min-width:200px" placeholder="Campaign title (optional)">
+      <button class="btn" id="bcBtn" onclick="sendBroadcast()">📢 Create &amp; send</button>
+    </div>
+    <div class="muted" style="margin-top:6px;font-size:12px">Delivered ~15/s; users who blocked the bot are auto-skipped. Personalize with <code>{name}</code> <code>{balance}</code> <code>{bonus}</code> <code>{username}</code> (use <code>{name|there}</code> for a fallback).</div>
+    <div class="divider"></div>
+    <div class="row" style="justify-content:space-between;margin-bottom:6px">
+      <div class="mini" style="margin:0">📋 Campaigns</div>
+      <span class="muted" id="bcBlocked"></span>
+    </div>
+    <div class="scroll"><table id="campTbl"><thead><tr><th>#</th><th>Title</th><th>Status</th><th>✅</th><th>⚠️</th><th>🚫</th><th>Left</th><th>Total</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="panel tabpanel hide" id="p-receipts">
+    <div class="mini">💰 Tracked totals</div>
+    <div class="cards" id="trackCards" style="margin-bottom:16px"></div>
+    <div class="row" style="margin-bottom:12px">
+      <select id="payStatus" onchange="loadReceipts(1)"><option value="" selected>All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+      <input id="payQ" placeholder="Search receipt / user / admin id / provider… (auto)" oninput="deb(loadReceipts)" />
+      <label class="chk"><input type="checkbox" id="paySelAll" onchange="selectAllPay(this.checked)"> all</label>
+      <button class="btn sm" onclick="bulkApprove()">✅ Approve selected</button>
+      <span class="muted" id="payCounts"></span>
+    </div>
+    <div class="scroll"><table id="payTbl"><thead><tr><th>#</th><th>User</th><th>Receipt</th><th>Bank</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div class="pager" id="payPager"></div>
+  </div>
+
+  <div class="panel tabpanel hide" id="p-downloads">
+    <div class="cards" id="dlCards"></div>
+    <div class="row" style="align-items:flex-start;gap:24px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px"><h2>📅 Daily downloads</h2>
+        <div class="scroll" style="max-height:360px;overflow-y:auto"><table id="dlDaily"><thead><tr><th>Day</th><th>Downloads</th></tr></thead><tbody></tbody></table></div></div>
+      <div style="flex:1;min-width:280px"><h2>🏆 Top downloaders</h2>
+        <div class="scroll" style="max-height:360px;overflow-y:auto"><table id="dlTop"><thead><tr><th>#</th><th>User</th><th>Downloads</th></tr></thead><tbody></tbody></table></div></div>
+    </div>
+  </div>
+
+  <div class="panel tabpanel hide" id="p-billing">
+    <h2>⚙️ Billing & settings</h2>
+    <div class="row">
+      <span class="muted">Download mode:</span>
+      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option></select>
+      <span class="muted" style="margin-left:12px">Service:</span><button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
+      <span class="muted" style="margin-left:12px">DB:</span><span id="dbStat" class="tag">…</span>
+      <select id="dbPolicy" onchange="saveSet({db_down_policy:this.value})"><option value="refuse">DB down: Refuse</option><option value="free">DB down: Serve free</option><option value="fallback">DB down: Fallback</option></select>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted">Global price (Birr):</span><input class="sm" id="gprice" type="number" step="0.01" min="0" />
+      <span class="muted" style="margin-left:12px">VIP price (Birr):</span><input class="sm" id="vprice" type="number" step="0.01" min="0" />
+      <button class="btn" onclick="savePrices()">Save prices</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted">🎁 Welcome bonus (Birr):</span><input class="sm" id="welcomeBonus" type="number" step="0.01" min="0" title="Granted to NEW users into their bonus wallet"/>
+      <button class="btn sec" onclick="saveWelcomeBonus()">Save</button>
+      <label class="chk" style="margin-left:16px"><input type="checkbox" id="freeMode" onchange="saveSet({free_mode:this.checked})"> 🆓 Free mode (all downloads free)</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted">📄 PDF filename suffix:</span><input id="pdfSuffix" style="min-width:200px" placeholder="@NID_downloader_bot"/>
+      <button class="btn sec" onclick="saveSet({pdf_filename_suffix:$('#pdfSuffix').value})">Save</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">PDF files are sent as <code>&lt;Full Name&gt; &lt;suffix&gt;.pdf</code> — e.g. <code>Abebe Kebede @NID_downloader_bot.pdf</code>.</div>
+    <div class="divider"></div>
+    <div class="muted" style="margin-bottom:10px">🔑 Server 4 — token pool (used only in Server-4 download mode)</div>
+    <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">Token pool X-CSRF — Regular users</span><input id="s4reg" style="flex:1;min-width:220px" placeholder="regular pool X-CSRF token"/></div>
+    <div class="row" style="margin-bottom:6px"><span class="muted" style="width:230px">Token pool X-CSRF — ⭐ VIP users</span><input id="s4vip" style="flex:1;min-width:220px" placeholder="leave blank → regular pool"/></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">Regular and VIP users draw Server 4 tokens from different pools via these X-CSRF tokens. Leave VIP blank to send VIP users to the regular pool.</div>
+    <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">App Check token (optional)</span><textarea id="s4app" style="min-height:54px" placeholder="paste a static App Check JWT to bypass the pool"></textarea></div>
+    <button class="btn" onclick="saveServer4()">Save Server 4</button>
+    <div class="row" style="margin-top:12px">
+      <span class="muted">🧾 Receipt approver:</span>
+      <select id="approver" onchange="saveSet({approver:this.value})">
+        <option value="auto">Auto — all verifiers</option>
+        <option value="verifypayment">Auto — VerifyPayment</option>
+        <option value="leul">Auto — Leul</option>
+        <option value="relay">Auto — Phone relay</option>
+        <option value="manual">Manual only</option>
+      </select>
+      <span class="muted">How submitted receipts get approved.</span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="muted">🔗 VerifyPayment URL:</span><input id="vpUrl" style="min-width:230px" placeholder="https://verifypayment.org.et"/>
+      <span class="muted" style="margin-left:8px">API key:</span><input id="vpKey" style="min-width:200px" placeholder="X-API-Key"/>
+      <button class="btn sec" onclick="saveSet({vp_base_url:$('#vpUrl').value,vp_api_key:$('#vpKey').value})">Save</button>
+    </div>
+    <div class="divider"></div>
+    <div class="muted" style="margin-bottom:10px">🎁 Bulk bonus — grant to a whole segment (adds to spendable balance + tracked bonus)</div>
+    <div class="row" style="margin-bottom:8px">
+      <select id="bonusSeg" onchange="bonusCount()">
+        <option value="all">All users</option><option value="active">Active</option>
+        <option value="vip">VIP only</option><option value="with_balance">With balance</option>
+        <option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
+      </select>
+      <span class="tag" id="bonusCount">…</span>
+      <input class="sm" id="bonusAmt" type="number" step="0.01" min="0" placeholder="Birr">
+      <button class="btn" onclick="grantBulkBonus()">🎁 Grant bonus</button>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <span class="muted">…or to users whose approved top-ups ≥</span>
+      <input class="sm" id="bonusThresh" type="number" step="0.01" min="0" placeholder="Birr" oninput="deb3(bonusThreshCount)">
+      <span class="tag" id="bonusThreshCount">…</span>
+      <input class="sm" id="bonusThreshAmt" type="number" step="0.01" min="0" placeholder="bonus Birr">
+      <button class="btn" onclick="grantBonusThreshold()">🎁 Grant by threshold</button>
+    </div>
+    <div class="divider"></div>
+    <div class="muted" style="margin-bottom:10px">💳 Bulk payment mode — set billing mode for a whole segment</div>
+    <div class="row" style="margin-bottom:8px">
+      <select id="bulkModeSeg">
+        <option value="all">All users</option><option value="active">Active</option>
+        <option value="vip">VIP only</option><option value="with_balance">With balance</option>
+        <option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
+      </select>
+      <select id="bulkModeVal"><option value="prepaid">→ prepaid</option><option value="counter">→ counter</option><option value="postpaid">→ postpaid</option></select>
+      <input class="sm" id="bulkModeLimit" type="number" step="0.01" min="0" placeholder="postpaid limit">
+      <button class="btn" onclick="applyBulkMode()">Apply mode</button>
+    </div>
+    <div class="divider"></div>
+    <div class="muted" style="margin-bottom:10px">🛠 Maintenance — show a notice instead of serving</div>
+    <div class="row" style="margin-bottom:8px">
+      <select id="maintLevel" onchange="saveSet({maintenance_level:this.value})">
+        <option value="off">Maintenance: Off</option>
+        <option value="low">Low — block downloads only</option>
+        <option value="high">High — block everything (only /start & Help)</option>
+      </select>
+      <span class="muted">Admins always bypass.</span>
+    </div>
+    <textarea id="maintMsg" placeholder="Custom bilingual notice (leave empty for the default @nid_downloader_free_bot message)…" style="min-height:90px"></textarea>
+    <div class="row" style="margin:8px 0 4px"><button class="btn" onclick="saveMaintMsg()">Save notice</button>
+      <button class="btn sec" onclick="$('#maintMsg').value='';saveMaintMsg()">Reset to default</button></div>
+    <div class="divider"></div>
+    <div class="muted" style="margin-bottom:10px">💳 Payment accounts — shown to users & used to auto-verify receipts</div>
+    <div class="row" style="margin-bottom:8px"><span class="muted" style="width:70px">Telebirr</span><input id="tb_name" placeholder="Receiver name"/><input id="tb_acct" placeholder="Account / phone"/></div>
+    <div class="row" style="margin-bottom:8px" title="Extra Telebirr receivers, one per line"><span class="muted" style="width:70px">More TB</span>
+      <textarea id="tbList" style="min-height:64px" placeholder="Extra Telebirr receivers, one per line:  Name | Account | show(1/0) | verify(1/0)"></textarea></div>
+    <div class="row" style="margin-bottom:12px"><span class="muted" style="width:70px">CBE</span><input id="cbe_name" placeholder="Receiver name"/><input id="cbe_acct" placeholder="Account number"/></div>
+    <div class="row" style="margin-bottom:12px">
+      <label class="chk"><input type="checkbox" id="showAV" onchange="saveSet({show_autoverify:this.checked})"> Show “payments auto-verified” note in the pay-to text</label>
     </div>
     <button class="btn" onclick="saveAccounts()">Save accounts</button>
   </div>
+</div>
 
-  <div class="panel">
-    <h2>💳 Pending payments <span class="tag" id="payCount">0</span></h2>
-    <div class="scroll">
-      <table id="payTbl">
-        <thead>
-          <tr>
-            <th data-col="id" onclick="sortPay('id')">#</th>
-            <th data-col="user_id" onclick="sortPay('user_id')">User</th>
-            <th data-col="receipt_id" onclick="sortPay('receipt_id')">Receipt</th>
-            <th data-col="bank" onclick="sortPay('bank')">Bank</th>
-            <th data-col="amount_cents" onclick="sortPay('amount_cents')">Amount (Birr)</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+<div id="histModal" class="modal hide" onclick="if(event.target===this)closeHist()">
+  <div class="modalCard">
+    <button class="btn sec sm" style="float:right" onclick="closeHist()">✕ Close</button>
+    <div id="histBody"></div>
   </div>
+</div>
 
-  <div class="panel">
-    <h2>👥 Users</h2>
-    <div class="row" style="margin-bottom: 16px">
-      <input id="q" placeholder="Search username or id…" onkeydown="if(event.key==='Enter')loadUsers(1)" style="flex: 1; min-width: 200px;" />
-      <select id="statusF" onchange="loadUsers(1)">
-        <option value="">All statuses</option>
-        <option value="active">active</option>
-        <option value="blocked">blocked</option>
-        <option value="pending">pending</option>
-      </select>
-      <select id="vipF" onchange="loadUsers(1)">
-        <option value="">All users</option>
-        <option value="1">VIP only</option>
-        <option value="0">Non-VIP</option>
-      </select>
-      <select id="modeF" onchange="loadUsers(1)">
-        <option value="">All modes</option>
-        <option value="counter">counter</option>
-        <option value="prepaid">prepaid</option>
-        <option value="postpaid">postpaid</option>
-      </select>
-      <button class="btn" onclick="loadUsers(1)">Search</button>
-    </div>
-    <div class="scroll">
-      <table id="usrTbl">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Status</th>
-            <th>Mode</th>
-            <th>Balance</th>
-            <th>Price</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <div class="pager" id="pager"></div>
+<div id="mgmtModal" class="modal hide" onclick="if(event.target===this)closeManage()">
+  <div class="modalCard">
+    <button class="btn sec sm" style="float:right" onclick="closeManage()">✕ Close</button>
+    <div id="mgmtBody"></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => r.querySelectorAll(s);
+const $=(s,r=document)=>r.querySelector(s);
+let PAGE={users:1,receipts:1}, bcTimer=null, debTimer=null, HIDE_BAL=false, LAST={};
+function toast(m,e){const t=$("#toast");t.textContent=m;t.className="toast show"+(e?" err":"");setTimeout(()=>t.className="toast",1900)}
+function birr(c){return (Number(c||0)/100).toLocaleString(undefined,{maximumFractionDigits:2})+" Birr"}
+function birrMask(c){return HIDE_BAL?"••••":birr(c)}   // dashboard totals only
+function who(id,u){return u?("@"+u):("#"+id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function deb(fn){clearTimeout(debTimer);debTimer=setTimeout(()=>fn(1),300)}
 
-let USERS_PAGE = 1;
-let RAW_PAYMENTS = [];
-let PAY_SORT_COL = 'id';
-let PAY_SORT_ASC = true;
-
-function toast(msg, err = false) {
-  const t = $("#toast");
-  t.textContent = msg;
-  t.className = "toast show" + (err ? " err" : " ok");
-  setTimeout(() => t.className = "toast", 3000);
+async function api(path,opts){
+  const r=await fetch(path,{headers:{"Content-Type":"application/json"},...opts});
+  if(r.status===401){showLogin();throw new Error("unauthorized")}
+  if(!r.ok){let m=r.status;try{m=(await r.json()).detail||m}catch{}throw new Error(m)}
+  return r.status===204?null:r.json();
 }
-function birr(c) { return (Number(c || 0) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " Birr"; }
-function who(id, u) { return u ? ("@" + u) : ("#" + id); }
+function showLogin(){$("#login").classList.remove("hide");$("#dash").classList.add("hide");stopLive()}
+function showDash(){$("#login").classList.add("hide");$("#dash").classList.remove("hide");startLive();showTab('users')}
+async function doLogin(){$("#loginErr").textContent="";try{await api("/api/login",{method:"POST",body:JSON.stringify({password:$("#pw").value})});showDash()}catch{$("#loginErr").textContent="Wrong password."}}
+async function logout(){try{await api("/api/logout",{method:"POST"})}catch{}showLogin()}
 
-async function api(path, opts) {
-  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
-  if (r.status === 401) { showLogin(); throw new Error("unauthorized"); }
-  if (!r.ok) { let m = r.status; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
-  return r.status === 204 ? null : r.json();
-}
+function toggleBal(){HIDE_BAL=!HIDE_BAL;$("#balBtn").textContent=HIDE_BAL?"👁 Show totals":"👁 Hide totals";if(LAST.stats)renderCards(LAST.stats);}
 
-function showLogin() { $("#login").classList.remove("hide"); $("#dash").classList.add("hide"); stopLive(); }
-function showDash() { $("#login").classList.add("hide"); $("#dash").classList.remove("hide"); startLive(); loadUsers(1); }
-
-async function doLogin() {
-  $("#loginErr").textContent = "";
-  try { await api("/api/login", { method: "POST", body: JSON.stringify({ password: $("#pw").value }) }); showDash(); }
-  catch (e) { $("#loginErr").textContent = "Wrong password."; }
-}
-async function logout() { try { await api("/api/logout", { method: "POST" }); } catch {} showLogin(); }
-
-// ── live stats + payments ──
-let liveTimer = null;
-function startLive() { refresh(); liveTimer = setInterval(refresh, 5000); }
-function stopLive() { if (liveTimer) clearInterval(liveTimer); liveTimer = null; }
-
-async function refresh() {
-  try {
-    const s = await api("/api/stats");
-    renderCards(s); renderSettings(s);
-    const p = await api("/api/payments");
-    RAW_PAYMENTS = p.payments || [];
-    renderPayments();
-    $("#liveDot").style.background = "var(--ac2)";
-    $("#liveDot").style.boxShadow = "0 0 0 0 rgba(16, 185, 129, 0.6)";
-  } catch (e) {
-    $("#liveDot").style.background = "var(--err)";
-    $("#liveDot").style.boxShadow = "0 0 0 0 rgba(239, 68, 68, 0.6)";
-  }
+function refreshAll(){
+  const b=$("#refreshBtn");b.disabled=true;b.textContent="⏳ …";
+  refresh();
+  const t=document.querySelector(".tab.on");
+  if(t)showTab(t.dataset.tab);
+  setTimeout(()=>{b.disabled=false;b.textContent="🔄 Refresh";toast("Refreshed");},400);
 }
 
-function renderCards(s) {
-  const items = [
-    ["Users", s.users], ["Active", s.active], ["Blocked", s.blocked], ["VIP", s.vip],
-    ["Pending pay", s.pending_payments], ["Downloads today", s.downloads_today],
-    ["Downloads total", s.downloads_total], ["Total balance", birr(s.balance_cents)],
-    ["Top-ups today", birr(s.topups_today_cents)],
-  ];
-  $("#cards").innerHTML = items.map(([k, v]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+function showTab(t){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
+  document.querySelectorAll(".tabpanel").forEach(p=>p.classList.add("hide"));
+  $("#p-"+t).classList.remove("hide");
+  if(t==="users")loadUsers(PAGE.users);
+  if(t==="receipts"){loadReceipts(PAGE.receipts);loadTracked();}
+  if(t==="downloads")loadDownloads();
+  if(t==="broadcast"){bcCount();loadCampaigns();}
+  if(t==="billing"){bonusCount();bonusThreshCount();}
 }
 
-function renderSettings(s) {
-  $("#modeBtn").textContent = s.mode === "server4" ? "Server-4" : "API";
-  $("#pauseBtn").textContent = s.paused ? "⏸ Paused (resume)" : "▶ Running (pause)";
-  $("#pauseBtn").className = "btn " + (s.paused ? "warn" : "sec");
-  if (document.activeElement !== $("#gprice")) $("#gprice").value = (Number(s.global_price_cents || 0) / 100);
-  const a = s.accounts || {}, tb = a.telebirr || {}, cb = a.cbe || {};
-  const set = (id, v) => { const el = $(id); if (el && document.activeElement !== el) el.value = v || ""; };
-  set("#tb_name", tb.name); set("#tb_acct", tb.account); set("#cbe_name", cb.name); set("#cbe_acct", cb.account);
-  const dbEl = $("#dbStat");
-  if (dbEl) { dbEl.textContent = s.db_ready ? "✅ up" : "⚠️ DOWN"; dbEl.className = "tag " + (s.db_ready ? "ok" : "bad"); }
-  if (document.activeElement !== $("#dbPolicy") && s.db_down_policy) $("#dbPolicy").value = s.db_down_policy;
+async function bonusCount(){try{const d=await api("/api/broadcast/count?segment="+$("#bonusSeg").value);$("#bonusCount").textContent=d.count+" users"}catch{$("#bonusCount").textContent="?"}}
+async function grantBulkBonus(){
+  const amt=$("#bonusAmt").value, seg=$("#bonusSeg").value, cnt=$("#bonusCount").textContent;
+  if(!amt||Number(amt)<=0)return toast("Enter a bonus amount",true);
+  if(!confirm(`Grant ${amt} Birr bonus to ${cnt} (${seg})?\nAdded to their bonus wallet (spent first).`))return;
+  try{const r=await api("/api/bonus/bulk",{method:"POST",body:JSON.stringify({segment:seg,amount_birr:amt})});
+    toast(`🎁 Granted to ${r.count} users`);$("#bonusAmt").value="";refresh();}catch(e){toast(e.message,true)}
+}
+let deb3Timer=null;function deb3(fn){clearTimeout(deb3Timer);deb3Timer=setTimeout(fn,300)}
+async function bonusThreshCount(){const t=$("#bonusThresh").value;try{const d=await api("/api/topups/bonus_threshold/count?threshold_birr="+(t||0));$("#bonusThreshCount").textContent=d.count+" users"}catch{$("#bonusThreshCount").textContent="?"}}
+async function grantBonusThreshold(){
+  const amt=$("#bonusThreshAmt").value, th=$("#bonusThresh").value||0, cnt=$("#bonusThreshCount").textContent;
+  if(!amt||Number(amt)<=0)return toast("Enter a bonus amount",true);
+  if(!confirm(`Grant ${amt} Birr bonus to ${cnt} whose approved top-ups ≥ ${th} Birr?`))return;
+  try{const r=await api("/api/topups/bonus_threshold",{method:"POST",body:JSON.stringify({amount_birr:amt,threshold_birr:th})});
+    toast(`🎁 Granted to ${r.count} users`);$("#bonusThreshAmt").value="";refresh();}catch(e){toast(e.message,true)}
+}
+async function saveWelcomeBonus(){await saveSet({welcome_bonus_birr:$("#welcomeBonus").value||0})}
+async function applyBulkMode(){
+  const seg=$("#bulkModeSeg").value, mode=$("#bulkModeVal").value, limit=$("#bulkModeLimit").value||0;
+  if(!confirm(`Set ${mode} mode for ALL users in "${seg}"?`+(mode==="postpaid"?`\nPostpaid limit: ${limit} Birr`:"")))return;
+  try{const r=await api("/api/billing/bulk_mode",{method:"POST",body:JSON.stringify({segment:seg,mode,limit_birr:limit})});
+    toast(`✅ ${r.count} users → ${mode}`);loadUsers&&loadUsers();}catch(e){toast(e.message,true)}
 }
 
-async function toggleMode() { const s = await api("/api/stats"); const nm = s.mode === "api" ? "server4" : "api"; await api("/api/settings", { method: "POST", body: JSON.stringify({ mode: nm }) }); toast("Mode → " + nm); refresh(); }
-async function togglePause() { const s = await api("/api/stats"); await api("/api/settings", { method: "POST", body: JSON.stringify({ paused: !s.paused }) }); refresh(); }
-async function saveGprice() { await api("/api/settings", { method: "POST", body: JSON.stringify({ global_price_birr: $("#gprice").value }) }); toast("Global price saved"); refresh(); }
-async function saveDbPolicy() { await api("/api/settings", { method: "POST", body: JSON.stringify({ db_down_policy: $("#dbPolicy").value }) }); toast("DB-down policy saved"); refresh(); }
-async function saveAccounts() {
-  await api("/api/settings", { method: "POST", body: JSON.stringify({
-    telebirr_name: $("#tb_name").value, telebirr_account: $("#tb_acct").value,
-    cbe_name: $("#cbe_name").value, cbe_account: $("#cbe_acct").value,
-  }) });
-  toast("Payment accounts saved"); refresh();
+async function loadTracked(){
+  try{const t=await api("/api/tracked");
+    const it=[["Approved top-ups",t.approved_topups_cents],["Bonuses granted",t.tracked_bonuses_cents],
+      ["Bonus wallet (unspent)",t.current_bonus_wallet_cents],
+      ["Recharge (topups+bonus)",t.tracked_recharge_cents],["Net used",t.net_used_cents],
+      ["Current balances",t.current_balances_cents],["Balance w/o bonus",t.balance_wo_bonuses_cents],
+      ["Owed",t.owed_cents]];
+    $("#trackCards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v" style="font-size:16px">${birr(v)}</div></div>`).join("");
+  }catch(e){}
 }
 
-// ── Payments & Sorting ──
-function sortPay(col) {
-  if (PAY_SORT_COL === col) PAY_SORT_ASC = !PAY_SORT_ASC;
-  else { PAY_SORT_COL = col; PAY_SORT_ASC = true; }
-  renderPayments();
+async function openHist(id){
+  $("#histModal").classList.remove("hide");
+  $("#histBody").innerHTML=`<div class="muted">Loading history for #${id}…</div>`;
+  try{const h=await api(`/api/users/${id}/history`);$("#histBody").innerHTML=histHtml(h);}
+  catch(e){$("#histBody").innerHTML=`<div class="muted">${esc(e.message)}</div>`;}
+}
+function closeHist(){$("#histModal").classList.add("hide");}
+function histHtml(h){
+  const u=h.user, rows=(arr,cols,f)=>arr.length?arr.map(f).join(""):`<tr><td colspan="${cols}" class="muted">None.</td></tr>`;
+  return `
+    <h2 style="font-size:17px">${who(u.telegram_id,u.username)} <span class="muted">#${u.telegram_id}</span></h2>
+    <div class="row" style="gap:6px;margin-bottom:10px">
+      <span class="tag ${u.status==='active'?'ok':'bad'}">${u.status}</span>
+      <span class="tag">${u.billing_mode}</span>${u.is_vip?'<span class="tag vip">VIP</span>':''}
+      ${u.tag?`<span class="tag">🏷 ${esc(u.tag)}</span>`:''}${u.role?`<span class="tag">${esc(u.role)}</span>`:''}
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Balance</div><div class="v" style="font-size:16px">${birr(u.balance_cents)}</div></div>
+      <div class="card"><div class="k">Bonus wallet</div><div class="v" style="font-size:16px">${birr(u.bonus_balance_cents)}</div><div class="muted" style="font-size:10px">${birr(u.bonus_cents)} total bonus</div></div>
+      <div class="card"><div class="k">Owed</div><div class="v" style="font-size:16px">${birr(u.owed_cents)}</div></div>
+      <div class="card"><div class="k">Downloads</div><div class="v" style="font-size:16px">${h.downloads.total}<span class="muted" style="font-size:11px"> · ${h.downloads.today} today</span></div></div>
+    </div>
+    <div class="mini">🧾 Receipts</div>
+    <div class="scroll"><table><thead><tr><th>#</th><th>Receipt</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>${rows(h.payments,5,p=>`<tr><td>#${p.id}</td><td><code>${esc(p.receipt_id)}</code></td><td>${p.amount_cents?birr(p.amount_cents):'—'}</td><td><span class="tag ${p.status==='approved'?'ok':p.status==='rejected'?'bad':'pend'}">${p.status}</span></td><td class="muted">${p.created_at?p.created_at.slice(0,10):''}</td></tr>`)}</tbody></table></div>
+    <div class="mini">💰 Wallet ledger</div>
+    <div class="scroll"><table><thead><tr><th>Kind</th><th>Amount</th><th>Balance after</th><th>Reason</th><th>Date</th></tr></thead>
+      <tbody>${rows(h.ledger,5,l=>`<tr><td>${l.kind}</td><td>${birr(l.amount_cents)}</td><td>${birr(l.balance_after_cents)}</td><td class="muted">${esc(l.reason||'')}</td><td class="muted">${l.created_at?l.created_at.slice(0,10):''}</td></tr>`)}</tbody></table></div>
+    <div class="mini">📥 Recent downloads</div>
+    <div class="scroll"><table><thead><tr><th>Format</th><th>Cost</th><th>Day</th></tr></thead>
+      <tbody>${rows(h.downloads.recent,3,d=>`<tr><td>${esc(d.format)}</td><td>${d.cost_cents?birr(d.cost_cents):'—'}</td><td class="muted">${d.day||''}</td></tr>`)}</tbody></table></div>`;
 }
 
-function renderPayments() {
-  let rows = [...RAW_PAYMENTS];
-  $("#payCount").textContent = rows.length;
-  
-  rows.sort((a, b) => {
-    let va = a[PAY_SORT_COL], vb = b[PAY_SORT_COL];
-    if (typeof va === 'string') va = va.toLowerCase();
-    if (typeof vb === 'string') vb = vb.toLowerCase();
-    if (va < vb) return PAY_SORT_ASC ? -1 : 1;
-    if (va > vb) return PAY_SORT_ASC ? 1 : -1;
-    return 0;
+let liveTimer=null;
+function startLive(){refresh();liveTimer=setInterval(refresh,6000)}
+function stopLive(){if(liveTimer)clearInterval(liveTimer);liveTimer=null}
+async function refresh(){try{const s=await api("/api/stats");LAST.stats=s;renderCards(s);renderBilling(s);$("#liveDot").style.background="var(--brand)"}catch{$("#liveDot").style.background="var(--danger)"}}
+function renderCards(s){
+  const it=[["Users",s.users],["Active",s.active],["Blocked",s.blocked],["VIP",s.vip],
+    ["Pending pay",s.pending_payments],["Downloads today",s.downloads_today],
+    ["Downloads total",s.downloads_total],["Total balance",birrMask(s.balance_cents)],["Top-ups today",birrMask(s.topups_today_cents)]];
+  $("#cards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+}
+function renderBilling(s){
+  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=s.mode==="server4"?"server4":"api";
+  $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
+  const setv=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||""};
+  setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);
+  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);
+  const g=$("#gprice"),v=$("#vprice");
+  if(document.activeElement!==g)g.value=(Number(s.global_price_cents||0)/100);
+  if(document.activeElement!==v)v.value=(Number(s.vip_price_cents||0)/100);
+  const db=$("#dbStat");db.textContent=s.db_ready?"✅ up":"⚠️ DOWN";db.className="tag "+(s.db_ready?"ok":"bad");
+  if(document.activeElement!==$("#dbPolicy")&&s.db_down_policy)$("#dbPolicy").value=s.db_down_policy;
+  if(document.activeElement!==$("#maintLevel")&&s.maintenance_level)$("#maintLevel").value=s.maintenance_level;
+  const mm=$("#maintMsg");if(mm&&document.activeElement!==mm)mm.value=s.maintenance_message||"";
+  if(document.activeElement!==$("#approver")&&s.approver)$("#approver").value=s.approver;
+  const av=$("#showAV");if(av)av.checked=!!s.show_autoverify;
+  const wb=$("#welcomeBonus");if(wb&&document.activeElement!==wb)wb.value=(Number(s.welcome_bonus_cents||0)/100);
+  const fm=$("#freeMode");if(fm)fm.checked=!!s.free_mode;
+  const ps=$("#pdfSuffix");if(ps&&document.activeElement!==ps)ps.value=s.pdf_filename_suffix||"";
+  const tl=$("#tbList"),recs=s.telebirr_receivers||[];
+  if(tl&&document.activeElement!==tl)tl.value=recs.slice(1).map(r=>`${r.name} | ${r.account} | ${r.show?1:0} | ${r.verify?1:0}`).join("\n");
+  const a=s.accounts||{},tb=a.telebirr||{},cb=a.cbe||{};
+  const set=(id,x)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=x||""};
+  set("#tb_name",tb.name);set("#tb_acct",tb.account);set("#cbe_name",cb.name);set("#cbe_acct",cb.account);
+}
+async function togglePause(){const s=await api("/api/stats");await saveSet({paused:!s.paused})}
+async function saveServer4(){await saveSet({s4_csrf_regular:$("#s4reg").value,s4_csrf_vip:$("#s4vip").value,s4_appcheck:$("#s4app").value})}
+async function saveSet(o){await api("/api/settings",{method:"POST",body:JSON.stringify(o)});toast("Saved");refresh()}
+async function savePrices(){await saveSet({global_price_birr:$("#gprice").value,vip_price_birr:$("#vprice").value})}
+async function saveAccounts(){
+  const primary={name:$("#tb_name").value.trim(),account:$("#tb_acct").value.trim(),show:true,verify:true};
+  const extra=$("#tbList").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{
+    const p=l.split("|").map(x=>x.trim());
+    const b=(v,d)=>v==null?d:(v==="1"||v.toLowerCase()==="true");
+    return {name:p[0]||"",account:p[1]||"",show:b(p[2],true),verify:b(p[3],true)};
   });
+  const telebirr_list=[primary,...extra].filter(r=>r.name||r.account);
+  await saveSet({telebirr_name:$("#tb_name").value,telebirr_account:$("#tb_acct").value,
+    cbe_name:$("#cbe_name").value,cbe_account:$("#cbe_acct").value,telebirr_list});
+}
+async function saveMaintMsg(){await saveSet({maintenance_message:$("#maintMsg").value})}
 
-  const headers = $$("#payTbl th[data-col]");
-  headers.forEach(h => {
-    h.classList.remove("sort-asc", "sort-desc");
-    if (h.getAttribute("data-col") === PAY_SORT_COL) h.classList.add(PAY_SORT_ASC ? "sort-asc" : "sort-desc");
-  });
-
-  const tb = $("#payTbl tbody");
-  if (!rows.length) { tb.innerHTML = `<tr><td colspan="6" class="muted">No pending payments.</td></tr>`; return; }
-  tb.innerHTML = rows.map(p => `<tr>
-    <td style="font-family: monospace; color: var(--mut)">#${p.id}</td>
-    <td><span class="tag">#${p.user_id}</span></td>
-    <td style="font-family: monospace;">${p.receipt_id}</td>
-    <td><span class="tag ${p.bank==='telebirr'?'vip':''}">${p.bank}</span></td>
-    <td><input class="sm" id="amt${p.id}" type="number" step="0.01" min="0" placeholder="0.00" style="width: 80px;"></td>
-    <td class="row">
-      <button class="btn" onclick="approve(${p.id})">Approve</button>
-      <button class="btn err" onclick="reject(${p.id})">Reject</button>
-    </td></tr>`).join("");
+async function loadUsers(p){
+  PAGE.users=p||PAGE.users;
+  const q=encodeURIComponent($("#q").value.trim()),st=$("#statusF").value,vip=$("#vipF").value,mode=$("#modeF").value,bonus=$("#bonusF").value;
+  const d=await api(`/api/users?page=${PAGE.users}&q=${q}&status=${st}&vip=${vip}&mode=${mode}&bonus=${bonus}`);
+  const tb=$("#usrTbl tbody");
+  if(!d.users.length){tb.innerHTML=`<tr><td colspan="6" class="muted">No users.</td></tr>`;$("#usrPager").innerHTML="";return}
+  tb.innerHTML=d.users.map(userRow).join("");
+  $("#usrPager").innerHTML=pager(d.page,d.pages,d.total,"loadUsers");
+}
+function userRow(u){
+  const id=u.telegram_id;
+  const st=u.status==="active"?`<span class="tag ok">active</span>`:u.status==="blocked"?`<span class="tag bad">blocked</span>`:`<span class="tag">${u.status}</span>`;
+  const vip=u.is_vip?` <span class="tag vip">VIP</span>`:"";
+  const tagChip=u.tag?` <span class="tag">🏷 ${esc(u.tag)}</span>`:"";
+  const price=u.price_override_cents!=null?birr(u.price_override_cents)+" *":"global";
+  return `<tr><td>${who(id,u.username)}<div class="muted" style="font-size:11px">#${id}</div></td>
+    <td>${st}${vip}${tagChip}</td><td>${u.billing_mode}</td><td class="baltxt">${birr(u.balance_cents)}</td><td>${price}</td>
+    <td><button class="btn sec sm" onclick="openManage(${id})">⚙ Manage</button></td></tr>`;
 }
 
-async function approve(id) {
-  const amt = $("#amt" + id).value;
-  if (!amt || Number(amt) <= 0) return toast("Enter an amount", true);
-  try {
-    const r = await api("/api/payments/" + id + "/approve", { method: "POST", body: JSON.stringify({ amount_birr: amt }) });
-    toast("Approved " + birr(r.amount_cents)); refresh();
-  } catch (e) { toast("Approve failed: " + e.message, true); }
+let _mgmtId=null;
+async function openManage(id,silent){
+  _mgmtId=id;
+  $("#mgmtModal").classList.remove("hide");
+  if(!silent)$("#mgmtBody").innerHTML=`<div class="muted">Loading #${id}…</div>`;
+  try{const u=await api(`/api/users/${id}`);$("#mgmtBody").innerHTML=manageHtml(u);}
+  catch(e){if(!silent)$("#mgmtBody").innerHTML=`<div class="muted">${esc(e.message)}</div>`;}
 }
+function closeManage(){_mgmtId=null;$("#mgmtModal").classList.add("hide");}
+function manageHtml(u){
+  const id=u.telegram_id;
+  return `
+    <h2 style="font-size:17px">${who(id,u.username)} <span class="muted">#${id}</span></h2>
+    <div class="row" style="gap:6px;margin-bottom:12px">
+      <span class="tag ${u.status==='active'?'ok':'bad'}">${u.status}</span>
+      <span class="tag">${u.billing_mode}</span>${u.is_vip?'<span class="tag vip">⭐ VIP</span>':''}
+      <span class="tag">Balance ${birr(u.balance_cents)}</span>${u.bonus_balance_cents?`<span class="tag">🎁 ${birr(u.bonus_balance_cents)}</span>`:''}
+    </div>
+    <div class="mgmt" style="margin-top:0">
+      <div class="grp"><div class="lbl">Account</div><div class="fld">
+        ${u.status==="blocked"?`<button class="btn sm" onclick="act(${id},'unblock')">Unblock</button>`:`<button class="btn err sm" onclick="act(${id},'block')">Block</button>`}
+        <button class="btn sm ${u.is_vip?'':'sec'}" onclick="act(${id},'vip',${!u.is_vip})">${u.is_vip?'⭐ Un-VIP':'Make VIP'}</button>
+        <select onchange="act(${id},'mode',this.value)" title="billing mode">${["counter","prepaid","postpaid"].map(m=>`<option ${u.billing_mode===m?'selected':''}>${m}</option>`).join("")}</select>
+      </div>
+      <div class="fld" style="margin-top:8px">
+        <input id="tg${id}" style="width:120px" placeholder="tag" value="${esc(u.tag||'')}"><button class="btn sec sm" onclick="setTag(${id})">Save tag</button>
+      </div></div>
 
-async function reject(id) {
-  try { await api("/api/payments/" + id + "/reject", { method: "POST" }); toast("Rejected payment #" + id); refresh(); }
-  catch (e) { toast("Reject failed: " + e.message, true); }
-}
+      <div class="grp"><div class="lbl">Balance &amp; bonus</div>
+        <div class="fld"><input class="sm" id="tp${id}" type="number" step="0.01" placeholder="Birr"><button class="btn sm" onclick="topup(${id})">＋ Add</button></div>
+        <div class="fld" style="margin-top:6px"><input class="sm" id="dd${id}" type="number" step="0.01" placeholder="Birr"><button class="btn err sm" onclick="deduct(${id})">－ Deduct</button></div>
+        <div class="fld" style="margin-top:6px"><input class="sm" id="bn${id}" type="number" step="0.01" placeholder="Birr"><button class="btn sec sm" onclick="grantBonus(${id})">🎁 Bonus</button></div>
+      </div>
 
-// ── users ──
-async function loadUsers(page) {
-  USERS_PAGE = page || USERS_PAGE;
-  const q = encodeURIComponent($("#q").value.trim()); const st = $("#statusF").value;
-  const vip = $("#vipF").value; const mode = $("#modeF").value;
-  const d = await api(`/api/users?page=${USERS_PAGE}&q=${q}&status=${st}&vip=${vip}&mode=${mode}`);
-  const tb = $("#usrTbl tbody");
-  if (!d.users.length) { tb.innerHTML = `<tr><td colspan="6" class="muted">No users found.</td></tr>`; $("#pager").innerHTML = ""; return; }
-  tb.innerHTML = d.users.map(u => userRow(u)).join("");
-  $("#pager").innerHTML = `
-    <button class="btn sec" ${d.page <= 1 ? "disabled" : ""} onclick="loadUsers(${d.page - 1})">◀ Prev</button>
-    <span class="muted" style="margin: 0 8px; font-size: 13px;">Page <b style="color:var(--txt)">${d.page}</b> / ${d.pages} · <b style="color:var(--txt)">${d.total}</b> users</span>
-    <button class="btn sec" ${d.page >= d.pages ? "disabled" : ""} onclick="loadUsers(${d.page + 1})">Next ▶</button>`;
-}
+      <div class="grp"><div class="lbl">Pricing</div>
+        <div class="fld"><input class="sm" id="pr${id}" type="number" step="0.01" placeholder="price"><button class="btn sec sm" onclick="setPrice(${id})">Set</button><button class="btn sec sm" onclick="act(${id},'price','clear')">Global</button></div>
+        <div class="fld" style="margin-top:6px"><input class="sm" id="ds${id}" type="number" step="0.01" placeholder="discount" value="${u.discount_cents?(u.discount_cents/100):''}"><button class="btn sec sm" onclick="setDiscount(${id})">Discount</button></div>
+        <div class="fld" style="margin-top:6px"><input class="sm" id="cl${id}" type="number" step="0.01" placeholder="credit"><button class="btn sec sm" onclick="setCredit(${id})">Limit</button></div>
+      </div>
 
-function userRow(u) {
-  const id = u.telegram_id;
-  const stTag = u.status === "active" ? `<span class="tag ok">active</span>` : u.status === "blocked" ? `<span class="tag bad">blocked</span>` : `<span class="tag">${u.status}</span>`;
-  const vip = u.is_vip ? ` <span class="tag vip">VIP</span>` : "";
-  const price = u.price_override_cents != null ? birr(u.price_override_cents) + " <span class='muted'>*</span>" : "<span class='muted'>global</span>";
-  return `<tr>
-    <td><div style="font-weight: 500">${who(id, u.username)}</div><div class="muted" style="font-size:11px; margin-top:2px;">#${id}</div></td>
-    <td>${stTag}${vip}</td>
-    <td><span class="tag">${u.billing_mode}</span></td>
-    <td style="font-weight: 500">${birr(u.balance_cents)}</td>
-    <td>${price}</td>
-    <td>
-      <details class="u">
-        <summary class="btn sec" style="padding: 6px 12px; font-size: 12px;">Manage ▾</summary>
-        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--line);">
-          <div class="row">
-            ${u.status === "blocked" ? `<button class="btn" onclick="act(${id},'unblock')">Unblock</button>` : `<button class="btn err" onclick="act(${id},'block')">Block</button>`}
-            <button class="btn ${u.is_vip ? 'warn' : 'sec'}" onclick="act(${id},'vip',${!u.is_vip})">${u.is_vip ? 'Remove VIP' : 'Make VIP'}</button>
-          </div>
-          <div class="row">
-            <select onchange="act(${id},'mode',this.value)">
-              ${["counter", "prepaid", "postpaid"].map(m => `<option value="${m}" ${u.billing_mode === m ? "selected" : ""}>${m}</option>`).join("")}
-            </select>
-            <input class="sm" id="tp${id}" type="number" step="0.01" min="0" placeholder="Birr">
-            <button class="btn" onclick="topup(${id})">Add balance</button>
-          </div>
-          <div class="row">
-            <input class="sm" id="pr${id}" type="number" step="0.01" min="0" placeholder="Birr">
-            <button class="btn sec" onclick="setPrice(${id})">Set price</button>
-            <button class="btn sec" onclick="act(${id},'price','clear')">Use global</button>
-          </div>
-          ${u.billing_mode === "postpaid" ? `
-          <div class="row">
-            <input class="sm" id="cl${id}" type="number" step="0.01" min="0" placeholder="Birr">
-            <button class="btn sec" onclick="setCredit(${id})">Set credit limit</button>
-          </div>` : ""}
+      <div class="grp"><div class="lbl">Actions</div>
+        <div class="fld">
+          <button class="btn sec sm" onclick="openHist(${id})">📜 History</button>
+          <button class="btn sec sm" onclick="dmUser(${id})">✉️ DM</button>
         </div>
-      </details>
-    </td></tr>`;
+      </div>
+    </div>`;
+}
+async function act(id,action,value,extra){try{await api(`/api/users/${id}/action`,{method:"POST",body:JSON.stringify({action,value,...(extra||{})})});toast("Done");loadUsers();refresh();if(_mgmtId===id)openManage(id,true);}catch(e){toast(e.message,true)}}
+async function topup(id){const v=$("#tp"+id).value;if(!v||Number(v)<=0)return toast("Enter amount",true);await act(id,"topup",v)}
+async function deduct(id){const v=$("#dd"+id).value;if(!v||Number(v)<=0)return toast("Enter amount",true);await act(id,"deduct",v)}
+async function grantBonus(id){const v=$("#bn"+id).value;if(!v||Number(v)<=0)return toast("Enter amount",true);await act(id,"bonus",v)}
+async function setPrice(id){const v=$("#pr"+id).value;if(v==="")return toast("Enter price",true);await act(id,"price",v)}
+async function setCredit(id){await act(id,"credit",$("#cl"+id).value||0)}
+async function setDiscount(id){await act(id,"discount",$("#ds"+id).value||0)}
+async function setTag(id){await act(id,"tag",$("#tg"+id).value)}
+async function setAllow(id,which,checked){await act(id,"allow",checked,{which})}
+function dmUser(id){
+  closeManage();
+  $("#bcUser").value=id;                 // single-user target
+  showTab('broadcast');                  // jump to the composer (recounts to 1)
+  const t=$("#bcText");if(t){t.value="";t.focus();}
+  toast("Composing message to #"+id);
 }
 
-async function act(id, action, value) { try { await api(`/api/users/${id}/action`, { method: "POST", body: JSON.stringify({ action, value }) }); toast("Updated user successfully"); loadUsers(); refresh(); } catch (e) { toast(e.message, true); } }
-async function topup(id) { const v = $("#tp" + id).value; if (!v || Number(v) <= 0) return toast("Enter amount", true); await act(id, "topup", v); }
-async function setPrice(id) { const v = $("#pr" + id).value; if (v === "") return toast("Enter price", true); await act(id, "price", v); }
-async function setCredit(id) { const v = $("#cl" + id).value; await act(id, "credit", v || 0); }
+async function loadReceipts(p){
+  PAGE.receipts=p||PAGE.receipts;
+  const st=$("#payStatus").value,q=encodeURIComponent($("#payQ").value.trim());
+  const d=await api(`/api/payments?page=${PAGE.receipts}&status=${st}&q=${q}`);
+  const c=d.counts||{};$("#payCounts").textContent=`pending ${c.pending||0} · approved ${c.approved||0} · rejected ${c.rejected||0}`;
+  const tb=$("#payTbl tbody");
+  if(!d.payments.length){tb.innerHTML=`<tr><td colspan="8" class="muted">No receipts.</td></tr>`;$("#payPager").innerHTML="";return}
+  tb.innerHTML=d.payments.map(payRow).join("");
+  $("#payPager").innerHTML=pager(d.page,d.pages,d.total,"loadReceipts");
+}
+function payRow(p){
+  const stcls=p.status==="approved"?"ok":p.status==="rejected"?"bad":"pend";
+  const date=p.created_at?p.created_at.slice(0,10):"";
+  const act=p.status==="pending"
+    ?`<input type="checkbox" class="paysel" value="${p.id}" title="select for bulk approve">
+      <button class="btn sec sm" onclick="reverify(${p.id})" title="re-run auto-verifier">🔁</button>
+      <input class="sm" id="amt${p.id}" type="number" step="0.01" placeholder="0.00"><button class="btn sm" onclick="approve(${p.id})">Approve</button><button class="btn err sm" onclick="reject(${p.id})">Reject</button>`
+    :`<span class="muted">${esc(p.provider||"")}${p.decided_by?" · by "+esc(p.decided_by):""}</span>`;
+  return `<tr><td>#${p.id}</td><td><button class="btn sec sm" onclick="openHist(${p.user_id})" title="User history">#${p.user_id} 📜</button></td><td><code>${esc(p.receipt_id)}</code></td><td>${esc(p.bank)}</td>
+    <td>${p.amount_cents?birr(p.amount_cents):"—"}</td><td><span class="tag ${stcls}">${p.status}</span></td><td class="muted">${date}</td>
+    <td class="row" style="gap:6px">${act}</td></tr>`;
+}
+async function approve(id){const a=$("#amt"+id).value;if(!a||Number(a)<=0)return toast("Enter an amount",true);
+  try{const r=await api(`/api/payments/${id}/approve`,{method:"POST",body:JSON.stringify({amount_birr:a})});toast("Approved");loadReceipts();loadTracked();refresh()}catch(e){toast(e.message,true)}}
+async function reject(id){try{await api(`/api/payments/${id}/reject`,{method:"POST"});toast("Rejected");loadReceipts();loadTracked();refresh()}catch(e){toast(e.message,true)}}
+async function reverify(id){
+  try{const v=await api(`/api/payments/${id}/reverify`,{method:"POST"});
+    if(v.ok){const el=$("#amt"+id);if(el)el.value=(v.amount_cents/100);toast(`✅ ${v.provider}: ${(v.amount_cents/100)} Birr — amount filled`);}
+    else if(v.receiver_mismatch)toast("⚠️ Paid to a DIFFERENT account",true);
+    else if(v.already_used)toast("⚠️ Receipt already used",true);
+    else if(v.manual)toast("Approver is set to Manual-only",true);
+    else toast("❔ "+(v.error||"not verified"),true);
+  }catch(e){toast(e.message,true)}
+}
+function selectAllPay(chk){document.querySelectorAll(".paysel").forEach(c=>c.checked=chk)}
+async function bulkApprove(){
+  const ids=[...document.querySelectorAll(".paysel:checked")].map(c=>Number(c.value));
+  if(!ids.length)return toast("Tick some receipts first",true);
+  if(!confirm(`Auto-verify & approve ${ids.length} selected receipt(s)?\nOnly receipts that verify to a real amount are approved; the rest are skipped.`))return;
+  try{const r=await api("/api/payments/bulk_approve",{method:"POST",body:JSON.stringify({ids})});
+    toast(`✅ ${r.approved.length} approved · ${r.skipped.length} skipped`);
+    $("#paySelAll").checked=false;loadReceipts();loadTracked();refresh();}catch(e){toast(e.message,true)}
+}
 
-// boot: try stats; if 401 → login
-(async () => { try { await api("/api/stats"); showDash(); } catch { showLogin(); } })();
+async function loadDownloads(){
+  const d=await api("/api/downloads");
+  $("#dlCards").innerHTML=[["Total downloads",d.total],["Today",d.today]].map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const max=Math.max(1,...d.daily.map(r=>r.n));
+  $("#dlDaily tbody").innerHTML=d.daily.length?d.daily.map(r=>{
+    const w=v=>Math.round(v/max*100);
+    const bar=`<div style="display:flex;height:14px;border-radius:4px;overflow:hidden;background:var(--mint);min-width:120px">
+      <div title="PDF ${r.pdf}" style="width:${w(r.pdf)}%;background:var(--brand)"></div>
+      <div title="Screenshot ${r.screenshot}" style="width:${w(r.screenshot)}%;background:var(--sun)"></div>
+      <div title="Other ${r.other}" style="width:${w(r.other)}%;background:var(--mut)"></div></div>`;
+    return `<tr><td>${r.day}<div class="muted" style="font-size:10px">📄${r.pdf} · 🖼${r.screenshot}${r.other?' · '+r.other:''}</div></td><td style="min-width:130px">${bar}<span class="muted" style="font-size:11px">${r.n}</span></td></tr>`;
+  }).join(""):`<tr><td colspan="2" class="muted">No data.</td></tr>`;
+  $("#dlTop tbody").innerHTML=d.top.length?d.top.map((r,i)=>`<tr><td>${i+1}</td><td>${who(r.user_id,r.username)}</td><td>${r.n}</td></tr>`).join(""):`<tr><td colspan="3" class="muted">No data.</td></tr>`;
+}
+
+let deb2Timer=null;
+function deb2(fn){clearTimeout(deb2Timer);deb2Timer=setTimeout(fn,300)}
+function bcFilterQS(){
+  const p=new URLSearchParams({segment:$("#bcSeg").value});
+  const add=(k,v)=>{if(v!=null&&String(v).trim()!=="")p.set(k,String(v).trim())};
+  add("user_id",$("#bcUser").value);
+  add("tag",$("#bcTag").value);add("exclude_tag",$("#bcExTag").value);add("role",$("#bcRole").value);
+  add("min_balance",$("#bcMin").value);add("max_balance",$("#bcMax").value);
+  return p.toString();
+}
+function bcButtons(){
+  return $("#bcBtns").value.split(";").map(s=>s.trim()).filter(Boolean).map(seg=>{
+    const i=seg.indexOf("|");if(i<0)return null;
+    return {text:seg.slice(0,i).trim(),url:seg.slice(i+1).trim()};
+  }).filter(b=>b&&b.text&&b.url);
+}
+async function bcCount(){try{const d=await api("/api/broadcast/count?"+bcFilterQS());$("#bcCount").textContent=d.count+" recipients"}catch{$("#bcCount").textContent="?"}}
+async function sendBroadcast(){
+  const text=$("#bcText").value.trim();if(!text)return toast("Type a message",true);
+  const one=$("#bcUser").value.trim();
+  const q=one?`Send this message to user #${one}?`:`Create a campaign to ${$("#bcCount").textContent}?\nThe worker sends ~15/s; you can pause/cancel from the list.`;
+  if(!confirm(q))return;
+  const body={text,title:$("#bcTitle").value,user_id:one,segment:$("#bcSeg").value,parse_mode:$("#bcParse").value||null,buttons:bcButtons(),
+    tag:$("#bcTag").value,exclude_tag:$("#bcExTag").value,role:$("#bcRole").value,
+    min_balance:$("#bcMin").value,max_balance:$("#bcMax").value};
+  try{const r=await api("/api/broadcast",{method:"POST",body:JSON.stringify(body)});
+    toast(one?`✉️ Sent to #${one} (campaign #${r.campaign_id})`:`📢 Campaign #${r.campaign_id} → ${r.total} recipients`);
+    $("#bcText").value="";$("#bcTitle").value="";$("#bcUser").value="";loadCampaigns();}catch(e){toast(e.message,true)}
+}
+async function loadCampaigns(){
+  try{
+    const d=await api("/api/broadcast/campaigns");
+    const b=await api("/api/broadcast/blocked");
+    $("#bcBlocked").textContent=`🚫 ${b.blocked} blocked · ${b.reactivated_30d} reactivated (30d)`;
+    const tb=$("#campTbl tbody");
+    if(!d.campaigns.length){tb.innerHTML=`<tr><td colspan="9" class="muted">No campaigns yet.</td></tr>`;return}
+    tb.innerHTML=d.campaigns.map(campRow).join("");
+    if(bcTimer)clearTimeout(bcTimer);
+    if(d.campaigns.some(c=>c.status==="sending"||c.status==="paused"))bcTimer=setTimeout(loadCampaigns,2000);
+  }catch(e){}
+}
+function campRow(c){
+  const stcls=c.status==="completed"?"ok":c.status==="cancelled"?"bad":c.status==="sending"?"pend":"";
+  const ctl=[];
+  if(c.status==="sending")ctl.push(`<button class="btn sec sm" onclick="campCtl(${c.id},'pause')">⏸</button>`);
+  if(c.status==="paused")ctl.push(`<button class="btn sm" onclick="campCtl(${c.id},'resume')">▶️</button>`);
+  if(["sending","paused","draft"].includes(c.status))ctl.push(`<button class="btn err sm" onclick="campCtl(${c.id},'cancel')">⏹</button>`);
+  ctl.push(`<button class="btn sec sm" onclick="campReport(${c.id})">📊</button>`);
+  ctl.push(`<a class="btn sec sm" href="/api/broadcast/${c.id}/recipients.csv" target="_blank">CSV</a>`);
+  if(["completed","cancelled","draft"].includes(c.status))ctl.push(`<button class="btn err sm" onclick="campCtl(${c.id},'delete')">🗑</button>`);
+  return `<tr><td>#${c.id}</td><td>${esc(c.title||"—")}<div class="muted" style="font-size:10px">${esc(c.segment||"")}</div></td>
+    <td><span class="tag ${stcls}">${c.status}</span></td><td>${c.sent}</td><td>${c.failed}</td><td>${c.blocked}</td>
+    <td>${c.remaining}</td><td>${c.total}</td><td class="row" style="gap:4px">${ctl.join("")}</td></tr>`;
+}
+async function campCtl(id,action){
+  if(action==="delete"&&!confirm("Delete this campaign and its recipient records?"))return;
+  if(action==="cancel"&&!confirm("Cancel this campaign? Unsent recipients are skipped."))return;
+  try{await api(`/api/broadcast/${id}/control`,{method:"POST",body:JSON.stringify({action})});toast("Done");loadCampaigns();}catch(e){toast(e.message,true)}
+}
+async function campReport(id){
+  try{const r=await api(`/api/broadcast/${id}/report`);const c=r.campaign;
+    let msg=`Campaign #${c.id} — ${c.status}\n✅ ${c.sent}  ⚠️ ${c.failed}  🚫 ${c.blocked}  ·  ${c.total} total`;
+    if(r.top_errors&&r.top_errors.length)msg+="\n\nTop errors:\n"+r.top_errors.map(e=>`• ${e.n}× ${e.error}`).join("\n");
+    alert(msg);
+  }catch(e){toast(e.message,true)}
+}
+function pager(page,pages,total,fn){
+  return `<button class="btn sec sm" ${page<=1?'disabled':''} onclick="${fn}(${page-1})">◀</button>
+    <span class="muted">page ${page}/${pages} · ${total}</span>
+    <button class="btn sec sm" ${page>=pages?'disabled':''} onclick="${fn}(${page+1})">▶</button>`;
+}
+(async()=>{try{await api("/api/stats");showDash()}catch{showLogin()}})();
 </script>
 </body>
 </html>

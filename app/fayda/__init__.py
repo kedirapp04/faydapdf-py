@@ -56,3 +56,9 @@ async def pool_status() -> dict:
     """Server-4 token-pool health (for the admin dashboard)."""
     from .server4_provider import pool_status as _ps
     return await _ps()
+
+
+def set_vip_context(vip: bool) -> None:
+    """Route this download's Server-4 token pull to the regular or VIP pool."""
+    from .server4_provider import set_vip
+    set_vip(vip)

@@ -49,20 +49,33 @@ CATALOG = {
     },
     "help": {
         "en": ("❓ How to use\n\n"
-               "📥 Send a 12–16 digit FIN/FAN → pick 📄 PDF / 🖼 Screenshot / 📦 Both → enter the OTP → get it.\n"
-               "📄 Get PDF / 🖼 Get Screenshot — pre-pick the output, then just send FIN/FANs.\n"
-               "🖼 Screenshot = the card images (front, back, photo + QR).\n"
-               "💳 My Wallet — your balance / billing.\n"
-               "💵 Add Balance — send a payment receipt (text or screenshot) for approval.\n"
+               "📥 How to Download a PDF file\n"
+               "1. Send a 12–16 digit FAN/FIN (or tap 📄 Get PDF / 🖼 Get Screenshot first).\n"
+               "2. Choose 📄 PDF or 🖼 Screenshot.\n"
+               "3. Enter the OTP — the file is sent after verification.\n\n"
+               "💵 How to Top Up\n"
+               "1. Tap Add Payment, then pay to the receiver name/phone shown by the bot.\n"
+               "2. Send the Telebirr receipt link, redirect link, or the 10-character transaction number "
+               "(or a screenshot of the receipt).\n"
+               "3. If auto-check is on, your balance is added after verification; otherwise wait for admin approval.\n"
+               "4. Use My Payments to see your top-up history, and My Balance to check your balance.\n\n"
                "🔑 Forgot FAN / FIN — recover your number by SMS (free)."),
         "am": ("❓ አጠቃቀም\n\n"
-               "📥 ባለ 12–16 ዲጂት FAN/FIN ይላኩ → 📄 PDF / 🖼 Screenshot / 📦 ሁለቱም ይምረጡ → OTP ያስገቡ → ይቀበሉ።\n"
-               "📄 Get PDF / 🖼 Get Screenshot — ውጤቱን አስቀድመው ይምረጡ፣ ከዚያ FAN/FIN ብቻ ይላኩ።\n"
-               "🖼 Screenshot = የካርድ ምስሎች (ፊት፣ ጀርባ፣ ፎቶ + QR)።\n"
-               "💳 My Wallet — ቀሪ ሂሳብዎ።\n"
-               "💵 Add Balance — የክፍያ ደረሰኝ (ጽሑፍ ወይም ስክሪንሾት) ይላኩ።\n"
+               "📥 PDF ፋይል እንዴት ማውረድ ይቻላል\n"
+               "1. ባለ 12–16 ዲጂት FAN/FIN ይላኩ (ወይም መጀመሪያ 📄 Get PDF / 🖼 Get Screenshot ይጫኑ)።\n"
+               "2. 📄 PDF ወይም 🖼 Screenshot ይምረጡ።\n"
+               "3. OTP ያስገቡ — ማረጋገጫ ከተሳካ ፋይሉ ይላካል።\n\n"
+               "💵 ቀሪ ብር እንዴት መሙላት ይቻላል\n"
+               "1. Add Payment ይጫኑ፣ ቦቱ ለሚያሳየው የተቀባይ ስም/ስልክ ክፍያ ይላኩ።\n"
+               "2. የTelebirr receipt link፣ redirect link ወይም 10-ቁምፊ transaction number ይላኩ (ወይም የደረሰኝ ስክሪንሾት)።\n"
+               "3. Auto-check ከተከፈተ ብሩ ከተረጋገጠ በኋላ ይጨመራል፤ አለበለዚያ የአስተዳዳሪ ፍቃድ ይጠብቁ።\n"
+               "4. የክፍያ ታሪክ ለማየት My Payments፣ ቀሪ ሂሳብ ለማየት My Balance ይጠቀሙ።\n\n"
                "🔑 Forgot FAN / FIN — ቁጥርዎን በSMS ያግኙ (ነፃ)።"),
     },
+    "price_per_pdf": {"en": "💵 Price per download: {price}", "am": "💵 ዋጋ በአንድ ማውረድ፦ {price}"},
+    "price_free": {"en": "🆓 Downloads are currently FREE.", "am": "🆓 ማውረድ አሁን ነፃ ነው።"},
+    "no_payments": {"en": "🧾 You have no top-ups yet.", "am": "🧾 እስካሁን ምንም ክፍያ የለዎትም።"},
+    "payments_header": {"en": "🧾 Your recent top-ups:", "am": "🧾 የቅርብ ጊዜ ክፍያዎችዎ፦"},
     "cancelled": {"en": "✖️ Cancelled.", "am": "✖️ ተሰርዟል።"},
     "blocked": {"en": "🚫 Your access is blocked. Contact the admin.",
                 "am": "🚫 መዳረሻዎ ታግዷል። አስተዳዳሪውን ያነጋግሩ።"},
@@ -80,27 +93,33 @@ CATALOG = {
                         "am": "🖼 ባለ 12–16 ዲጂት FAN/FIN ይላኩ — ስክሪንሾቶች ያገኛሉ (ፊት፣ ጀርባ፣ ፎቶ + QR)።"},
     "choose_output": {"en": "Choose the output for this download:",
                       "am": "ለዚህ ማውረድ ውጤቱን ይምረጡ፦"},
-    "one_id": {"en": "🆔 …{tail}", "am": "🆔 …{tail}"},
+    "one_id": {"en": "🆔 {fan}", "am": "🆔 {fan}"},
     "n_ids": {"en": "📥 {n} IDs — I'll do them one by one.",
               "am": "📥 {n} መታወቂያዎች — በተራ አከናውናለሁ።"},
     "dropped_note": {"en": "(Only the first {max} are processed per message; {dropped} ignored.)",
                      "am": "(በአንድ መልዕክት የመጀመሪያዎቹ {max} ብቻ ይከናወናሉ፤ {dropped} ተትተዋል።)"},
-    "otp_requesting": {"en": "📩 Requesting OTP for …{tail}…", "am": "📩 ለ…{tail} OTP እየተጠየቀ ነው…"},
-    "otp_sent": {"en": "📨 OTP sent for …{tail}.\nEnter the code you received:",
-                 "am": "📨 ለ…{tail} OTP ተልኳል።\nየደረሰዎትን ኮድ ያስገቡ፦"},
-    "otp_sent_to": {"en": "📨 OTP sent to {phone} for …{tail}.\nEnter the code you received:",
-                    "am": "📨 ወደ {phone} ለ…{tail} OTP ተልኳል።\nየደረሰዎትን ኮድ ያስገቡ፦"},
+    "otp_requesting": {"en": "📩 Requesting OTP for {fan}…", "am": "📩 ለ {fan} OTP እየተጠየቀ ነው…"},
+    "otp_sent": {"en": "📩 A 6-digit code has been sent to your phone. Please enter it here.\n❌ Send 'cancel' or tap Cancel to stop.",
+                 "am": "📩 የ6 ዲጂት ኮድ በስልክዎ ተልኳል። እባክዎ ቁጥሩን እዚህ ያስገቡ።\n❌ ለመሰረዝ 'cancel' ይላኩ ወይም Cancel ይጫኑ።"},
+    "otp_sent_to": {"en": "📩 OTP sent to {phone}. Please enter the 6-digit code here.\n❌ Send 'cancel' or tap Cancel to stop.",
+                    "am": "📩 ወደ {phone} OTP ተልኳል። እባክዎ የ6 ዲጂት ኮድ እዚህ ያስገቡ።\n❌ ለመሰረዝ 'cancel' ይላኩ ወይም Cancel ይጫኑ።"},
     "otp_send_fail": {"en": "⚠️ {error}\n\nSend the FIN again to retry.",
                       "am": "⚠️ {error}\n\nለመድገም FIN እንደገና ይላኩ።"},
     "otp_enter_numeric": {"en": "Send the numeric OTP code, or tap Cancel.",
                           "am": "የOTP ቁጥር ኮድ ይላኩ፣ ወይም Cancel ይጫኑ።"},
-    "verifying": {"en": "⏳ Verifying OTP & generating your document… (a few seconds)",
-                  "am": "⏳ OTP እየተረጋገጠ እና ሰነድዎ እየተዘጋጀ ነው… (ጥቂት ሰከንዶች)"},
+    "verifying": {"en": "⏳ Verifying OTP & generating your file… (a few seconds)",
+                  "am": "⏳ OTP እየተረጋገጠ እና ፋይልዎ እየተዘጋጀ ነው… (ጥቂት ሰከንዶች)"},
     "processing_delivery": {"en": "✅ Verified! Processing delivery…",
                             "am": "✅ ተረጋግጧል! በማድረስ ላይ…"},
-    "done": {"en": "✅ Done.", "am": "✅ ተጠናቀቀ።"},
-    "done_free": {"en": "✅ Done. · free (system recovering)",
-                  "am": "✅ ተጠናቀቀ። · ነፃ (ሲስተሙ በማገገም ላይ)"},
+    "done": {"en": "✅ PDF sent successfully.", "am": "✅ PDF በተሳካ ሁኔታ ተልኳል።"},
+    "done_free": {"en": "✅ Sent · free (system recovering).",
+                  "am": "✅ ተልኳል · ነፃ (ሲስተሙ በማገገም ላይ)።"},
+    "charged_prepaid": {"en": "💵 {charged} deducted · Balance: {balance}",
+                        "am": "💵 {charged} ተቀናሽ · ቀሪ ሂሳብ፦ {balance}"},
+    "charged_postpaid": {"en": "💵 {charged} charged · Balance: {balance}",
+                         "am": "💵 {charged} ተከፍሏል · ቀሪ ሂሳብ፦ {balance}"},
+    "charged_from_bonus": {"en": "🎁 {bonus_used} from bonus · Bonus left: {bonus_left}",
+                           "am": "🎁 {bonus_used} ከጉርሻ · ቀሪ ጉርሻ፦ {bonus_left}"},
     "id_in_progress": {"en": "⏳ That ID is already being processed — please wait a moment.",
                        "am": "⏳ ይህ መታወቂያ አስቀድሞ በሂደት ላይ ነው — እባክዎ ትንሽ ይጠብቁ።"},
     "recovering_free": {"en": "⚠️ System is recovering — this download is free and won't be recorded.",
@@ -122,11 +141,53 @@ CATALOG = {
                     "am": "✅ ተጠናቀቀ። FAN እና FIN በSMS ወደ {phone} ተልኳል።"},
     "forgot_err": {"en": "⚠️ {error}", "am": "⚠️ {error}"},
     # add-balance
-    "addbalance_header": {"en": "💵 Add Balance", "am": "💵 ሂሳብ ይሙሉ"},
-    "send_txn": {"en": "Then send the transaction number here (Telebirr or CBE, e.g. DGI70RYNL7)\n📷 …or just send a screenshot of your Telebirr receipt — I'll read it.",
-                 "am": "ከዚያ የግብይት ቁጥሩን እዚህ ይላኩ (Telebirr ወይም CBE፣ ለምሳሌ DGI70RYNL7)\n📷 …ወይም የTelebirr ደረሰኝ ስክሪንሾት ይላኩ — አነባለሁ።"},
+    "addbalance_header": {"en": "💵 Add Payment", "am": "💵 ክፍያ ጨምር"},
+    "send_txn": {"en": ("Pay to the receiver shown above, then send ONE of these:\n"
+                        "• the Telebirr receipt link or redirect link\n"
+                        "• the 10-character transaction number (e.g. DGI70RYNL7)\n"
+                        "📷 …or just send a screenshot of your Telebirr receipt — I'll read it.\n\n"
+                        "If auto-check is on, your balance is added after verification; otherwise an admin will approve it."),
+                 "am": ("ከላይ ለሚታየው ተቀባይ ክፍያ ይላኩ፣ ከዚያ ከእነዚህ አንዱን ይላኩ፦\n"
+                        "• የTelebirr receipt link ወይም redirect link\n"
+                        "• 10-ቁምፊ transaction number (ለምሳሌ DGI70RYNL7)\n"
+                        "📷 …ወይም የTelebirr ደረሰኝ ስክሪንሾት ይላኩ — አነባለሁ።\n\n"
+                        "Auto-check ከተከፈተ ብሩ ከተረጋገጠ በኋላ ይጨመራል፤ አለበለዚያ አስተዳዳሪ ያጸድቀዋል።")},
     "send_txn_short": {"en": "Send the transaction number (8–14 characters), a screenshot, or tap Cancel.",
                        "am": "የግብይት ቁጥር (8–14 ቁምፊ)፣ ስክሪንሾት ይላኩ፣ ወይም Cancel ይጫኑ።"},
+    # Full trilingual Add-Payment message. {recv} = the receiver bullet lines (shown
+    # at the top AND repeated at the bottom). Single-language slot → rendered once.
+    "addpay_full": {"en": (
+        "💵 Add Payment\n💵 ክፍያ ጨምር\n💵 Kaffaltii Dabaladhaa\n\n"
+        "💳 Pay to this account / ወደዚህ አካውንት ይክፈሉ / Gara herrega kanaatti kaffalaa:\n{recv}\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📌 English Instructions:\n"
+        "Pay to the receiver shown above, then send ONE of these to confirm:\n"
+        "📷 A screenshot of your Telebirr receipt (Auto-read is fully fixed and working!)\n"
+        "• The 10-character transaction number (e.g. DGI70RYNL7)\n"
+        "• The Telebirr receipt link or redirect link\n"
+        "• The full Telebirr SMS you received from 127\n\n"
+        "⏳ Your balance will be added automatically right after verification. "
+        "If auto-check is off, an admin will approve it shortly.\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📌 የአማርኛ መመሪያ:\n"
+        "ከላይ ለሚታየው ተቀባይ ክፍያ ይላኩ፣ ከዚያ ለማረጋገጥ ከእነዚህ ውስጥ አንዱን ብቻ ይላኩ፦\n"
+        "📷 የTelebirr ደረሰኝ ስክሪንሾት ይላኩ (አውቶማቲክ ማንበቢያው ሙሉ በሙሉ ተስተካክሏል!)\n"
+        "• ባለ 10-ቁምፊ የትራንዛክሽን ቁጥር (ለምሳሌ DGI70RYNL7)\n"
+        "• የTelebirr ደረሰኝ ሊንክ (Receipt ወይም Redirect link)\n"
+        "• ከ127 የደረሰዎትን ሙሉ የTelebirr መልዕክት (SMS)\n\n"
+        "⏳ አውቶማቲክ ማረጋገጫው (Auto-check) ሲያነበው ወዲያውኑ ሂሳብዎ (Balance) ላይ ይጨመራል፤ "
+        "ካልሆነ ደግሞ በአስተዳዳሪ (Admin) በፍጥነት ይጸድቃል።\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📌 Qajeelfama Afaan Oromoo:\n"
+        "Kaffaltii teessoo olitti argamuuf erga kaffaltanii booda, mirkaneessuuf kanneen gadii keessaa TOKKO QUFA ergaa:\n"
+        "📷 Screenshot risiitii Telebirr keessanii ergaa (Dubbisaan auto-check guutummaatti sirreeffamee hojjechaa jira!)\n"
+        "• Lakkoofsa tiraanzaakshinii qubee fi lakkoofsa 10 qabu (fkn, DGI70RYNL7)\n"
+        "• Liinkii risiitii Telebirr (Receipt ykn Redirect link)\n"
+        "• Ergaa Telebirr guutuu 127 irraa isiniif dhufe (SMS)\n\n"
+        "⏳ Auto-check yoo hojjete erga mirkanaa'ee booda battalumatti balance keessan irratti ni dabalama; "
+        "yoo ta'uu baate ammoo admin dafeen ni mirkaneessa.\n\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "💳 Receiver / ተቀባይ / Fudhataa:\n{recv}")},
     "checking_payment": {"en": "🔎 Checking your payment…", "am": "🔎 ክፍያዎ እየተረጋገጠ ነው…"},
     "reading_screenshot": {"en": "🔎 Reading your screenshot…", "am": "🔎 ስክሪንሾትዎ እየተነበበ ነው…"},
     "couldnt_read_txn": {"en": "⚠️ Couldn't read the transaction number.\nSend it as text, or a clearer screenshot.",
@@ -137,6 +198,8 @@ CATALOG = {
                              "am": "⚙️ ክፍያዎች ለጊዜው አይሰሩም። እባክዎ ከጥቂት ጊዜ በኋላ ይሞክሩ።"},
     "verified_added": {"en": "✅ Verified! {amount} added.\nNew balance: {balance}.",
                        "am": "✅ ተረጋግጧል! {amount} ተጨምሯል።\nአዲስ ቀሪ ሂሳብ፦ {balance}።"},
+    "autoverify_note": {"en": "✅ Payments are verified automatically — your balance is added instantly.",
+                        "am": "✅ ክፍያዎች በራስ-ሰር ይረጋገጣሉ — ቀሪ ሂሳብዎ ወዲያውኑ ይጨመራል።"},
     "already_submitted": {"en": "This receipt was already submitted (status: {status}).",
                           "am": "ይህ ደረሰኝ አስቀድሞ ቀርቧል (ሁኔታ፦ {status})።"},
     "receipt_submitted": {"en": "✅ Receipt submitted (#{id}). An admin will review it shortly.",
@@ -147,9 +210,12 @@ CATALOG = {
                         "am": "🚫 ክፍያዎ ውድቅ ተደርጓል። እባክዎ ደረሰኙን አረጋግጠው እንደገና ያቅርቡ።"},
     "credited_notify": {"en": "💵 {amount} was added to your balance by the admin.\nNew balance: {balance}.",
                         "am": "💵 {amount} በአስተዳዳሪው ወደ ቀሪ ሂሳብዎ ተጨምሯል።\nአዲስ ቀሪ ሂሳብ፦ {balance}።"},
+    "bonus_notify": {"en": "🎁 You received a {amount} bonus!\nBonus balance: {bonus} (used before your normal balance).",
+                     "am": "🎁 {amount} ጉርሻ አግኝተዋል!\nየጉርሻ ቀሪ ሂሳብ፦ {bonus} (ከመደበኛ ሂሳብዎ በፊት ይውላል)።"},
     # wallet
     "wallet_header": {"en": "💳 Wallet — {mode}", "am": "💳 ቀሪ ሂሳብ — {mode}"},
     "wallet_balance": {"en": "Balance: {balance}", "am": "ቀሪ ሂሳብ፦ {balance}"},
+    "wallet_bonus": {"en": "🎁 Bonus: {bonus} (used first)", "am": "🎁 ጉርሻ፦ {bonus} (መጀመሪያ ይውላል)"},
     "wallet_owed": {"en": "Owed: {owed} / {limit}", "am": "ዕዳ፦ {owed} / {limit}"},
     "wallet_price": {"en": "Price per download: {price}", "am": "ዋጋ በአንድ ማውረድ፦ {price}"},
     # billing gate reasons (used by services/billing.py)
@@ -162,4 +228,13 @@ CATALOG = {
     "reason_daily_limit": {"en": "Daily limit reached. Try again tomorrow.",
                            "am": "የቀኑ ገደብ ተሟልቷል። ነገ እንደገና ይሞክሩ።"},
     "gate_refused": {"en": "🚫 {reason}", "am": "🚫 {reason}"},
+    # maintenance mode (admin-toggleable; custom text overrides this default)
+    "maintenance_default": {
+        "en": ("🛠 The bot is under maintenance right now while we fix a payment issue.\n"
+               "Meanwhile you can download your Fayda ID for FREE at @nid_downloader_free_bot.\n"
+               "Thanks for your patience! 🙏"),
+        "am": ("🛠 ቦቱ የክፍያ ችግር እየተስተካከለ ስለሆነ አሁን በጥገና ላይ ነው።\n"
+               "እስከዚያ ድረስ የፋይዳ መታወቂያዎን በነጻ ከ @nid_downloader_free_bot ማውረድ ይችላሉ።\n"
+               "ስለ ትዕግስትዎ እናመሰግናለን! 🙏"),
+    },
 }

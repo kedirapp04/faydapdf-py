@@ -45,6 +45,14 @@ async def init_pool(retries: int = 5, delay: float = 2.0) -> asyncpg.Pool:
                 min_size=config.DB_POOL_MIN,
                 max_size=config.DB_POOL_MAX,
                 command_timeout=30,
+                # statement_cache_size=0 makes the pool safe behind a TRANSACTION-MODE
+                # connection pooler (PgBouncer / Supabase 6543): those recycle server
+                # connections per-transaction, so cached server-side prepared statements
+                # would break. Harmless on a direct connection too. This lets us point
+                # DATABASE_URL at a transaction pooler and run thousands of concurrent
+                # users over a small set of physical DB connections.
+                statement_cache_size=0,
+                max_inactive_connection_lifetime=300,  # recycle idle conns (pooler-friendly)
             )
             await _run_schema()
             _db_ready = True

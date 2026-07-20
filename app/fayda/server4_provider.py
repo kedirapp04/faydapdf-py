@@ -13,6 +13,7 @@ layout can only be confirmed against a real pool token + the Fayda backend. Unti
 then, API mode is the safe default.
 """
 import base64
+import contextvars
 import hashlib
 import os
 import secrets
@@ -22,8 +23,28 @@ from urllib.parse import urlparse, parse_qs
 import aiohttp
 
 from .. import config
+from ..repo import settings as settings_repo
 from .base import FaydaProvider, ok, err
 from . import pdf_render
+
+# Set per-download from the user's VIP flag so token pulls draw from the right pool.
+_vip_ctx = contextvars.ContextVar("s4_vip", default=False)
+
+
+def set_vip(vip: bool) -> None:
+    _vip_ctx.set(bool(vip))
+
+
+async def _csrf(vip: bool) -> str:
+    """CSRF that authenticates to the token pool. VIP users draw from a separate pool
+    when a VIP CSRF is set; blank VIP → fall back to the regular pool. Admin-set
+    settings override the env default."""
+    if vip:
+        v = (await settings_repo.get("s4_csrf_vip") or "").strip()
+        if v:
+            return v
+    v = (await settings_repo.get("s4_csrf_regular") or "").strip()
+    return v or config.SERVER4_TOKEN_API_CSRF
 
 _TIMEOUT = aiohttp.ClientTimeout(total=60)
 
@@ -137,8 +158,14 @@ async def _sweep():
 
 
 # ── flow ─────────────────────────────────────────────────────────────────────
-async def take_pool_token(min_seconds: int | None = None) -> str:
-    url, csrf = config.SERVER4_TOKEN_API_URL, config.SERVER4_TOKEN_API_CSRF
+async def take_pool_token(min_seconds: int | None = None, vip: bool | None = None) -> str:
+    # A pasted static App Check token (admin setting) overrides the pool entirely.
+    static = (await settings_repo.get("s4_appcheck") or "").strip()
+    if static:
+        return static
+    if vip is None:
+        vip = _vip_ctx.get()
+    url, csrf = config.SERVER4_TOKEN_API_URL, await _csrf(vip)
     if not url or not csrf:
         return ""
     secs = config.SERVER4_TOKEN_MIN_SECONDS if min_seconds is None else min_seconds
@@ -176,8 +203,9 @@ async def pool_status() -> dict:
     if not url:
         return {"ok": False, "error": "token API not configured"}
     headers = {}
-    if config.SERVER4_TOKEN_API_CSRF:
-        headers["X-CSRF-Token"] = config.SERVER4_TOKEN_API_CSRF
+    csrf = await _csrf(False)
+    if csrf:
+        headers["X-CSRF-Token"] = csrf
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
             async with s.get(url, headers=headers) as r:

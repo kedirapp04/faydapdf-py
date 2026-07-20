@@ -17,7 +17,7 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from .. import config, fayda, i18n
 from ..db import pool, db_ready, db_down_policy, mark_db_down
 from ..repo import users as users_repo, settings as settings_repo, payments as payments_repo
-from ..services import billing, payment_verify
+from ..services import billing, payment_verify, maintenance
 from . import keyboards as kb
 
 router = Router()
@@ -61,16 +61,30 @@ def _fan_hash(fan: str) -> str:
     return hashlib.sha256(fan.encode()).hexdigest()[:16]
 
 
-async def _seen(chat_id, bot_id) -> None:
-    """Record (user, bot) for broadcast, and remember the bot the user last used
-    so cross-bot notifications reach them via a bot they actually started.
+def _mask_phone(masked) -> str:
+    """Max-masked Ethiopian phone → +251*****#### (only the last 4 digits shown)."""
+    digits = re.sub(r"\D", "", str(masked or ""))
+    last4 = digits[-4:] if len(digits) >= 4 else digits
+    return f"+251*****{last4}" if last4 else ""
+
+
+async def _seen(chat_id, bot_id, first_name=None) -> None:
+    """Record (user, bot) for broadcast, remember the bot the user last used so
+    cross-bot notifications reach them, capture first_name for broadcast
+    personalization, and clear any stale is_blocked flag (they're clearly reachable).
     Non-critical — never let a DB blip here break a flow."""
     try:
         await pool().execute(
             "INSERT INTO chats (telegram_id, bot_id) VALUES ($1,$2) ON CONFLICT DO NOTHING",
             int(chat_id), int(bot_id),
         )
-        await pool().execute("UPDATE users SET last_bot_id=$1 WHERE telegram_id=$2", int(bot_id), int(chat_id))
+        await pool().execute(
+            "UPDATE users SET last_bot_id=$1, "
+            "first_name=COALESCE($3, first_name), "
+            "is_blocked=false, "
+            "unblocked_at=CASE WHEN is_blocked THEN now() ELSE unblocked_at END "
+            "WHERE telegram_id=$2",
+            int(bot_id), int(chat_id), (first_name or None))
     except Exception:
         mark_db_down()
 
@@ -93,16 +107,51 @@ async def _paused() -> bool:
     return await settings_repo.get_bool("paused", False)
 
 
+# ── maintenance gate (admins bypass) ─────────────────────────────────────────
+async def _maint_block_download(user_id) -> str | None:
+    """A DOWNLOAD attempt: blocked at BOTH low and high. Returns the notice or None."""
+    if config.is_admin(user_id):
+        return None
+    if (await maintenance.level()) in ("low", "high"):
+        return await maintenance.message()
+    return None
+
+
+async def _maint_block_action(user_id) -> str | None:
+    """A general DB action (wallet, pay, forgot…): blocked at HIGH only."""
+    if config.is_admin(user_id):
+        return None
+    if (await maintenance.level()) == "high":
+        return await maintenance.message()
+    return None
+
+
 # ── commands ────────────────────────────────────────────────────────────────
+async def _start_bg(uid, username, chat_id, bot_id, first_name):
+    """Record the user + chat AFTER the welcome is sent, so /start feels instant."""
+    try:
+        await users_repo.ensure(uid, username)
+    except Exception:
+        mark_db_down()
+    await _seen(chat_id, bot_id, first_name)
+
+
 @router.message(CommandStart())
 async def start(m: Message, state: FSMContext):
     await state.clear()
+    # Price-per-download shown on start; reads the (cached) live price, so it always
+    # reflects the admin's current setting / free mode.
     try:
-        await users_repo.ensure(m.from_user.id, m.from_user.username)
+        price = 0 if await billing.free_mode() else await billing.global_price_cents()
+        price_line = i18n.t("price_free") if price <= 0 else i18n.t("price_per_pdf", price=billing.birr(price))
     except Exception:
-        mark_db_down()
-    await _seen(m.chat.id, m.bot.id)
-    await m.answer(i18n.t("welcome"), reply_markup=kb.main_kb(m.from_user.id))
+        price_line = ""
+    welcome = i18n.t("welcome") + (("\n\n" + price_line) if price_line else "")
+    # Answer immediately; the DB writes (create user, welcome bonus, record chat) run
+    # in the background so the user isn't waiting on remote-DB round-trips.
+    await m.answer(welcome, reply_markup=kb.main_kb(m.from_user.id))
+    asyncio.create_task(_start_bg(m.from_user.id, m.from_user.username,
+                                  m.chat.id, m.bot.id, m.from_user.first_name))
 
 
 @router.message(Command("cancel"))
@@ -115,17 +164,33 @@ async def cancel_cmd(m: Message, state: FSMContext):
 async def cancel_cb(c: CallbackQuery, state: FSMContext):
     await state.clear()
     await c.answer("Cancelled")
-    await c.message.answer(i18n.t("cancelled"), reply_markup=kb.main_kb(c.from_user.id))
+    # Replace the prompt in place (drops its inline buttons) instead of sending a new
+    # message. The bottom reply keyboard persists on its own.
+    try:
+        await c.message.edit_text(i18n.t("cancelled"))
+    except Exception:
+        try:
+            await c.message.answer(i18n.t("cancelled"), reply_markup=kb.main_kb(c.from_user.id))
+        except Exception:
+            pass
 
 
 # ── reply-keyboard buttons (match in any state; reset the flow) ──────────────
 @router.message(F.text.in_(kb.BUTTONS))
 async def buttons(m: Message, state: FSMContext):
     await state.clear()
-    text = m.text
+    text = kb.canonical(m.text)   # route old/aliased labels to their current action
     # These need no DB — they just set FSM state / show static text.
     if text == kb.BTN_HELP:
         return await m.answer(i18n.t("help"), reply_markup=kb.main_kb(m.from_user.id))
+    # Maintenance gate. HIGH blocks every button but Help; the two download buttons
+    # are also blocked at LOW. Admins bypass (checked inside the helpers).
+    if text in (kb.BTN_GET_PDF, kb.BTN_GET_SHOT):
+        blk = await _maint_block_download(m.from_user.id)
+    else:
+        blk = await _maint_block_action(m.from_user.id)
+    if blk:
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     if text == kb.BTN_GET_PDF:   # pre-pick PDF, then await the FIN/FAN
         await state.set_state(Flow.await_fan)
         await state.update_data(dl_fmt="pdf")
@@ -143,20 +208,19 @@ async def buttons(m: Message, state: FSMContext):
     except Exception:
         mark_db_down()
         u = None
-    await _seen(m.chat.id, m.bot.id)
+    await _seen(m.chat.id, m.bot.id, m.from_user.first_name)
     if u is None or not db_ready():
         return await m.answer(i18n.t("unavailable"), reply_markup=kb.main_kb(m.from_user.id))
     if u["status"] == "blocked" and not config.is_admin(m.from_user.id):
         return await m.answer(i18n.t("blocked"))
     if text == kb.BTN_WALLET:
         return await _show_wallet(m)
+    if text == kb.BTN_PAYMENTS:
+        return await _show_payments(m)
     if text == kb.BTN_PAY:
         await state.set_state(Flow.receipt)
-        instr = await payment_verify.instructions()
-        msg = i18n.t("addbalance_header") + "\n"
-        if instr:
-            msg += f"\n{instr}\n"
-        msg += "\n" + i18n.t("send_txn")
+        recv = await payment_verify.receiver_block()
+        msg = i18n.t("addpay_full", recv=recv or "—")
         return await m.answer(msg, reply_markup=kb.cancel_kb())
     if text == kb.BTN_ADMIN:
         if config.is_admin(m.from_user.id):
@@ -171,13 +235,30 @@ async def _show_wallet(m: Message):
         u = await users_repo.ensure(m.from_user.id, m.from_user.username)
     mode = u["billing_mode"]
     lines = [i18n.t("wallet_header", mode=mode)]
-    if mode == "prepaid":
-        lines.append(i18n.t("wallet_balance", balance=billing.birr(u["balance_cents"])))
-    elif mode == "postpaid":
-        lines.append(i18n.t("wallet_balance", balance=billing.birr(u["balance_cents"])))
-        lines.append(i18n.t("wallet_owed", owed=billing.birr(u["owed_cents"]), limit=billing.birr(u["credit_limit_cents"])))
+    if mode in ("prepaid", "postpaid"):
+        # single net figure: normal balance minus any owed debt
+        net = u["balance_cents"] - u["owed_cents"]
+        lines.append(i18n.t("wallet_balance", balance=billing.birr(net)))
+    if u.get("bonus_balance_cents", 0) > 0 and mode in ("prepaid", "postpaid"):
+        lines.append(i18n.t("wallet_bonus", bonus=billing.birr(u["bonus_balance_cents"])))
     price = await billing.price_for(u)
     lines.append(i18n.t("wallet_price", price=billing.birr(price)))
+    await m.answer("\n".join(lines), reply_markup=kb.main_kb(m.from_user.id))
+
+
+async def _show_payments(m: Message):
+    """Recent top-up / payment history (the 'My Payments' button)."""
+    rows = await pool().fetch(
+        "SELECT receipt_id, bank, amount_cents, status, created_at FROM payments "
+        "WHERE user_id=$1 ORDER BY created_at DESC LIMIT 10", m.from_user.id)
+    if not rows:
+        return await m.answer(i18n.t("no_payments"), reply_markup=kb.main_kb(m.from_user.id))
+    icon = {"approved": "✅", "rejected": "🚫", "pending": "⏳"}
+    lines = [i18n.t("payments_header")]
+    for r in rows:
+        amt = billing.birr(r["amount_cents"]) if r["amount_cents"] else "—"
+        d = r["created_at"].strftime("%Y-%m-%d") if r["created_at"] else ""
+        lines.append(f"{icon.get(r['status'], '•')} {r['receipt_id']} · {amt} · {d}")
     await m.answer("\n".join(lines), reply_markup=kb.main_kb(m.from_user.id))
 
 
@@ -196,7 +277,8 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
         if not ok:
             await state.clear()
             return await m.answer(i18n.t("gate_refused", reason=reason))
-    wait = await m.answer(i18n.t("otp_requesting", tail=fan[-4:]))
+    wait = await m.answer(i18n.t("otp_requesting", fan=fan))   # show the full FAN/FIN
+    fayda.set_vip_context(bool(u.get("is_vip")))   # Server-4: regular vs VIP token pool
     provider, _mode = await fayda.get_provider()
     res = await provider.send_otp(fan)
     if not res.get("ok"):
@@ -206,14 +288,19 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
         return await wait.edit_text(i18n.t("otp_send_fail", error=res.get("error")))
     await state.set_state(Flow.otp)
     await state.update_data(session=res.get("session"), price_cents=price, mode=u["billing_mode"],
-                           fan_hash=_fan_hash(fan), queue=queue, delivery=delivery, db_free=db_free, uid=uid)
-    masked = res.get("masked_mobile")
-    key = "otp_sent_to" if masked else "otp_sent"
-    await wait.edit_text(i18n.t(key, tail=fan[-4:], phone=masked or ""), reply_markup=kb.cancel_kb())
+                           fan_hash=_fan_hash(fan), queue=queue, delivery=delivery, db_free=db_free,
+                           uid=uid, is_vip=bool(u.get("is_vip")))
+    phone = _mask_phone(res.get("masked_mobile"))
+    key = "otp_sent_to" if phone else "otp_sent"
+    await wait.edit_text(i18n.t(key, phone=phone), reply_markup=kb.cancel_kb())
 
 
 @router.message(Flow.otp, F.text)
 async def on_otp(m: Message, state: FSMContext):
+    blk = await _maint_block_download(m.from_user.id)
+    if blk:
+        await state.clear()
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     otp = m.text.replace(" ", "")
     if not OTP_RE.match(otp):
         return await m.answer(i18n.t("otp_enter_numeric"))
@@ -222,6 +309,7 @@ async def on_otp(m: Message, state: FSMContext):
     db_free = bool(data.get("db_free"))
     queue = list(data.get("queue") or [])
     wait = await m.answer(i18n.t("verifying"))
+    fayda.set_vip_context(bool(data.get("is_vip")))   # Server-4: regular vs VIP token pool
     provider, _mode = await fayda.get_provider()
     res = await provider.verify_pdf(session, otp)
     if not res.get("ok"):
@@ -230,9 +318,10 @@ async def on_otp(m: Message, state: FSMContext):
 
     await wait.edit_text(i18n.t("processing_delivery"))
 
+    charge = None
     if not db_free:   # DB down → served free, nothing to charge or record
         try:
-            await billing.charge_and_log(m.from_user.id, int(price_cents), mode, fan_hash)
+            charge = await billing.charge_and_log(m.from_user.id, int(price_cents), mode, fan_hash)
         except Exception:  # never fail delivery on a billing hiccup, but surface it loudly
             log.exception("charge_and_log failed for user %s (price=%s mode=%s)", m.from_user.id, price_cents, mode)
             mark_db_down()
@@ -246,14 +335,24 @@ async def on_otp(m: Message, state: FSMContext):
     want_shots = bool(shots) and delivery in ("both", "screenshot")
     want_pdf = bool(res.get("pdf")) and (delivery in ("both", "pdf") or not want_shots)
     caption = (i18n.t("done_free") if db_free else i18n.t("done")) + (f" ({len(queue)} left)" if queue else "")
+    if charge and charge.get("charged"):   # show what was deducted + the new net balance
+        amt = billing.birr(charge["charged"])
+        net = billing.birr((charge.get("balance") or 0) - (charge.get("owed") or 0))
+        key = "charged_postpaid" if charge["mode"] == "postpaid" else "charged_prepaid"
+        caption += "\n" + i18n.t(key, charged=amt, balance=net)
+        if charge.get("from_bonus"):   # part (or all) came from the bonus wallet
+            caption += "\n" + i18n.t("charged_from_bonus",
+                                     bonus_used=billing.birr(charge["from_bonus"]),
+                                     bonus_left=billing.birr(charge.get("bonus_balance") or 0))
     captioned = False
     sent_shot = False
 
     if want_shots:
         for i, s in enumerate(shots):
             last = (i == len(shots) - 1) and not want_pdf
+            fn = s["filename"] if "." in s["filename"] else s["filename"] + ".png"
             try:
-                await m.answer_photo(BufferedInputFile(s["bytes"], filename=s["filename"]),
+                await m.answer_photo(BufferedInputFile(s["bytes"], filename=fn),
                                      caption=caption if last else None)
                 sent_shot = True
                 captioned = captioned or last
@@ -263,7 +362,14 @@ async def on_otp(m: Message, state: FSMContext):
     if want_shots and not sent_shot and res.get("pdf"):
         want_pdf = True
     if want_pdf:
-        doc = BufferedInputFile(res["pdf"], filename=res.get("filename") or "fayda.pdf")
+        fn = res.get("filename") or "fayda.pdf"
+        base = fn[:-4] if fn.lower().endswith(".pdf") else fn
+        try:
+            suffix = (await settings_repo.get("pdf_filename_suffix")) or ""
+        except Exception:
+            suffix = ""
+        fn = f"{base} {suffix}".strip() + ".pdf" if suffix else base + ".pdf"
+        doc = BufferedInputFile(res["pdf"], filename=fn)
         await m.answer_document(doc, caption=caption)
         captioned = True
     if not captioned:
@@ -360,16 +466,24 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
 
 @router.message(Flow.receipt, F.text)
 async def on_receipt(m: Message, state: FSMContext):
+    blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments too
+    if blk:
+        await state.clear()
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     if not db_ready():   # payments need the DB — can't record money while it's down
         await state.clear()
         return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
-    match = re.search(r"\b[A-Z0-9]{8,14}\b", m.text.strip().upper())
-    if not match:
+    # Accept a bare txn number, a receipt link, OR the full Telebirr SMS from 127.
+    # Prefer a token that has BOTH letters and digits (the Telebirr/CBE reference
+    # shape) so an SMS/link doesn't pick a phone number, amount, or a word by mistake.
+    tokens = re.findall(r"\b[A-Z0-9]{8,14}\b", m.text.strip().upper())
+    mixed = [t for t in tokens if re.search(r"[A-Z]", t) and re.search(r"\d", t)]
+    receipt_id = (mixed or tokens or [""])[0]
+    if not receipt_id:
         return await m.answer(i18n.t("send_txn_short"), reply_markup=kb.cancel_kb())
-    receipt_id = match.group(0)
     await state.clear()
     wait = await m.answer(i18n.t("checking_payment"))
-    v = await payment_verify.verify(receipt_id) if payment_verify.any_configured() else {"ok": False}
+    v = await payment_verify.verify(receipt_id) if await payment_verify.any_configured() else {"ok": False}
     await _finalize_receipt(m, wait, v.get("receipt_id") or receipt_id, v)
 
 
@@ -377,6 +491,11 @@ async def on_receipt(m: Message, state: FSMContext):
 @router.message(F.photo)
 async def on_payment_photo(m: Message, state: FSMContext):
     in_receipt = (await state.get_state()) == Flow.receipt.state
+    if in_receipt:   # HIGH maintenance closes the Add-Balance receipt path too
+        blk = await _maint_block_action(m.from_user.id)
+        if blk:
+            await state.clear()
+            return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     if not db_ready():   # payments need the DB
         if in_receipt:
             await state.clear()
@@ -391,7 +510,7 @@ async def on_payment_photo(m: Message, state: FSMContext):
         return
     # Outside the Add-Balance step we only react to receipt-looking photos, and only
     # when an auto-verifier is configured (OCR is pointless without one).
-    if not in_receipt and not payment_verify.any_configured():
+    if not in_receipt and not await payment_verify.any_configured():
         return
     try:
         bio = await m.bot.download(m.photo[-1].file_id)
@@ -418,7 +537,7 @@ async def on_payment_photo(m: Message, state: FSMContext):
         return
     await state.clear()
     await wait.edit_text(i18n.t("checking_payment"))
-    if not payment_verify.any_configured():
+    if not await payment_verify.any_configured():
         v = {"ok": False}
     else:
         v = await payment_verify.verify_candidates(payment_verify.telebirr_candidates(txn), round((amount or 0) * 100))
@@ -429,7 +548,7 @@ async def _ask_format(m: Message, state: FSMContext, fans: list[str], dropped: i
     """FIN/FAN(s) entered → ask which output before pulling the OTP."""
     await state.set_state(Flow.choose_fmt)
     await state.update_data(fans=fans)
-    head = (i18n.t("one_id", tail=fans[0][-4:]) if len(fans) == 1 else i18n.t("n_ids", n=len(fans))) + "\n"
+    head = (i18n.t("one_id", fan=fans[0]) if len(fans) == 1 else i18n.t("n_ids", n=len(fans))) + "\n"
     if dropped:
         head += i18n.t("dropped_note", max=MAX_MULTI_FAN, dropped=dropped) + "\n"
     await m.answer(head + i18n.t("choose_output"), reply_markup=kb.format_kb())
@@ -460,6 +579,11 @@ async def on_choose_fmt(c: CallbackQuery, state: FSMContext):
     fmt = c.data.split(":", 1)[1]
     if fmt not in ("pdf", "screenshot", "both"):
         return await c.answer()
+    blk = await _maint_block_download(c.from_user.id)
+    if blk:
+        await c.answer()
+        await state.clear()
+        return await c.message.answer(blk, reply_markup=kb.main_kb(c.from_user.id))
     data = await state.get_data()
     fans = list(data.get("fans") or [])
     if not fans:
@@ -476,6 +600,10 @@ async def on_choose_fmt(c: CallbackQuery, state: FSMContext):
 # ── tapped Get PDF / Get Screenshot first → the FIN/FAN arrives here ──────────
 @router.message(Flow.await_fan, F.text)
 async def on_fan_awaited(m: Message, state: FSMContext):
+    blk = await _maint_block_download(m.from_user.id)
+    if blk:
+        await state.clear()
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     data = await state.get_data()
     fmt = data.get("dl_fmt", "both")
     fans, _dropped = _parse_fans(m.text)
@@ -493,6 +621,12 @@ async def on_fan_awaited(m: Message, state: FSMContext):
 @router.message(F.text)
 async def maybe_fan(m: Message, state: FSMContext):
     fans, dropped = _parse_fans(m.text)
+    # Maintenance: a FIN/FAN is a download attempt (blocked at low+high); any other
+    # stray text is a general action (blocked only at high, so the "send a FAN" hint
+    # still shows at low).
+    blk = await (_maint_block_download if fans else _maint_block_action)(m.from_user.id)
+    if blk:
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     if not fans:
         return await m.answer(i18n.t("send_fan"), reply_markup=kb.main_kb(m.from_user.id))
     # Throttle rapid typed-FAN messages (double-taps / spam) — one every few seconds.

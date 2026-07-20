@@ -21,6 +21,7 @@ import uvicorn
 from . import config, web
 from .db import init_pool, close_pool, health_loop
 from .main import run_bot
+from .services.broadcast_worker import worker_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("faydapdf-py")
@@ -57,6 +58,7 @@ async def main() -> None:
     await init_pool()
     log.info("DB pool ready. Web admin on %s:%s", config.WEB_HOST, config.WEB_PORT)
     asyncio.create_task(health_loop())  # DB-down recovery monitor
+    asyncio.create_task(_supervise("bcast", worker_loop))  # broadcast delivery worker
     try:
         # Neither supervisor returns; if one is cancelled (shutdown) the other is too.
         await asyncio.gather(_supervise("bot", run_bot), _supervise("web", _run_web))

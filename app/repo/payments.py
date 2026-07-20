@@ -97,3 +97,30 @@ async def list_pending(limit: int = 20, offset: int = 0) -> list[dict]:
 
 async def count_pending() -> int:
     return await pool().fetchval("SELECT count(*)::int FROM payments WHERE status='pending'")
+
+
+async def page(status: str | None, q: str | None, limit: int, offset: int) -> tuple[list[dict], int, dict]:
+    """Paginated receipts, any status, optional search (receipt id / user id / #id).
+    Returns (rows, total, counts_by_status)."""
+    where, args = [], []
+    if status in ("pending", "approved", "rejected"):
+        args.append(status)
+        where.append(f"status = ${len(args)}")
+    if q:
+        term = q.strip().lstrip("#")
+        if term.isdigit():
+            # numeric: payment id, user id, or the admin (decided_by) who reviewed it
+            args.append(int(term))
+            where.append(f"(user_id = ${len(args)} OR id = ${len(args)} OR decided_by = ${len(args)})")
+        else:
+            # text: receipt id or the provider/approver (verifypayment/leul/relay/manual…)
+            args.append(f"%{term.upper()}%")
+            where.append(f"(upper(receipt_id) LIKE ${len(args)} OR upper(provider) LIKE ${len(args)})")
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    total = await pool().fetchval(f"SELECT count(*)::int FROM payments {clause}", *args)
+    rows = await pool().fetch(
+        f"SELECT * FROM payments {clause} ORDER BY created_at DESC NULLS LAST LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
+        *args, limit, offset)
+    counts = {r["status"]: r["n"] for r in await pool().fetch(
+        "SELECT status, count(*)::int n FROM payments GROUP BY status")}
+    return [dict(r) for r in rows], total, counts

@@ -397,11 +397,12 @@ _OCR_FLIP = {"O": "0", "0": "O", "S": "5", "5": "S", "I": "1", "1": "I",
              "L": "1", "B": "8", "8": "B", "Z": "2", "2": "Z", "A": "4", "4": "A"}
 
 
-def telebirr_candidates(txn: str, cap: int = 32) -> list[str]:
+def telebirr_candidates(txn: str, cap: int = 64) -> list[str]:
     """Ordered OCR-correction candidates: the exact value first, then flip look-alike
     chars (0↔O, 5↔S, 1↔I, 8↔B, 2↔Z, 4↔A) in growing combinations. Bounded to `cap`
-    (32 → every combination for up to 5 ambiguous characters, 2^5) so the follow-up
-    verification stays fast. e.g. 'DGSOKNFF9S' → … → 'DG50KNFF9S'."""
+    (64 → every combination for up to 6 ambiguous characters, 2^6; and for more, all
+    1-, 2- and 3-character corrections) so the follow-up verification stays fast.
+    e.g. 'DGSOKNFF9S' → … → 'DG50KNFF9S'."""
     import itertools
     txn = re.sub(r"[^A-Z0-9]", "", (txn or "").upper())
     if not txn:

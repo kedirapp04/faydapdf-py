@@ -13,18 +13,49 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("faydapdf-py")
 
 
+_dp: Dispatcher | None = None
+
+
+def _dispatcher() -> Dispatcher:
+    """Build the dispatcher and attach the routers ONCE. A router can only ever be
+    attached to a single dispatcher, so re-including them on a supervisor restart
+    raises 'Router is already attached' — hence this module-level cache. Reusing the
+    dispatcher across restarts also keeps in-flight FSM state (MemoryStorage)."""
+    global _dp
+    if _dp is None:
+        _dp = Dispatcher(storage=MemoryStorage())
+        # Admin router first so its FSM states win over the user catch-all handler.
+        _dp.include_router(admin.router)
+        _dp.include_router(user.router)
+    return _dp
+
+
 async def run_bot() -> None:
     """Poll every bot this process owns. Assumes the DB pool is already up (so the
-    combined runner in app/run.py can share one pool with the web admin)."""
-    # One dispatcher (shared handlers) polling every bot this process owns. All
-    # bots share the same Postgres, so users/balance are the same account on any
-    # bot. Run several processes with POLL_ONLY to spread load across machines.
+    combined runner in app/run.py can share one pool with the web admin). All bots
+    share the same Postgres, so users/balance are the same account on any bot."""
     from aiogram.types import BotCommand
-    bots = [Bot(token=t) for t in config.POLL_TOKENS]
-    dp = Dispatcher(storage=MemoryStorage())
-    # Admin router first so its FSM states win over the user catch-all handler.
-    dp.include_router(admin.router)
-    dp.include_router(user.router)
+    dp = _dispatcher()
+    # Validate each token up front and poll ONLY the good ones. Otherwise a single
+    # revoked/typo'd token (Telegram 'Unauthorized') makes start_polling's gather raise
+    # and takes the whole fleet down.
+    bots = []
+    for t in config.POLL_TOKENS:
+        b = Bot(token=t)
+        try:
+            await b.get_me()
+        except Exception as e:
+            log.error("Skipping a bot token (%s: %s) — check BOT_TOKENS.", type(e).__name__, e)
+            try:
+                await b.session.close()
+            except Exception:
+                pass
+            continue
+        bots.append(b)
+    if not bots:
+        log.error("No valid bot tokens to poll — fix BOT_TOKENS. Retrying in 30s.")
+        await asyncio.sleep(30)
+        return
 
     cmds = [
         BotCommand(command="start", description="Start"),
@@ -42,7 +73,10 @@ async def run_bot() -> None:
         await dp.start_polling(*bots)
     finally:
         for b in bots:
-            await b.session.close()
+            try:
+                await b.session.close()
+            except Exception:
+                pass
 
 
 async def main() -> None:

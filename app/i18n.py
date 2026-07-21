@@ -14,6 +14,16 @@ SUPPORTED = ("en", "am")
 RENDER_ORDER = [c.strip().lower() for c in os.getenv("MESSAGE_LANGS", "en,am").split(",")
                 if c.strip().lower() in SUPPORTED] or ["en", "am"]
 
+# Telegram support handle shown for help. Any message can use {support}; the keys in
+# _HELP_KEYS also get a contact line auto-appended (errors / help — where a user is stuck).
+SUPPORT_USERNAME = (os.getenv("SUPPORT_USERNAME", "faydasupport") or "").strip().lstrip("@")
+_SUPPORT_LINE = "🆘 Help / እገዛ፦ @{support}"
+_HELP_KEYS = {
+    "help", "otp_send_fail", "receipt_wrong_account", "couldnt_read_txn",
+    "payments_unavailable", "system_unavailable", "unavailable", "recovering_free",
+    "forgot_err", "blocked", "paused", "already_submitted",
+}
+
 
 def _interp(text: str, params: dict) -> str:
     out = str(text if text is not None else "")
@@ -23,6 +33,7 @@ def _interp(text: str, params: dict) -> str:
 
 
 def t(key: str, **params) -> str:
+    params.setdefault("support", SUPPORT_USERNAME)   # so {support} resolves anywhere
     entry = CATALOG.get(key)
     if not entry:
         return f"[missing: {key}]"
@@ -37,9 +48,10 @@ def t(key: str, **params) -> str:
             continue
         seen.add(norm)
         parts.append(rendered)
-    if not parts:
-        return _interp(entry.get("en") or f"[empty: {key}]", params)
-    return "\n".join(parts)
+    body = "\n".join(parts) if parts else _interp(entry.get("en") or f"[empty: {key}]", params)
+    if SUPPORT_USERNAME and key in _HELP_KEYS:   # append a contact line to help/errors
+        body += "\n\n" + _interp(_SUPPORT_LINE, params)
+    return body
 
 
 CATALOG = {

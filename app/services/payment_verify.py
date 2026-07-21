@@ -442,6 +442,14 @@ async def verify_candidates(candidates: list[str], expected_cents: int = 0) -> d
     r0 = await verify(exact)
     if _ok(r0):
         return r0
+    # The exact receipt was a REAL one that just isn't creditable — data extracted but
+    # a DIFFERENT receiver (receiver_mismatch), or the receipt was already used. That is
+    # NOT a typo, so do NOT hunt look-alike variants (they'd be different receipts,
+    # possibly someone else's). Return as-is → the caller auto-rejects / manual-reviews.
+    # Only an INVALID / "This request is not correct" receipt gets look-alike correction,
+    # since that's exactly what a mistyped or mis-OCR'd number looks like.
+    if r0.get("receiver_mismatch") or r0.get("already_used"):
+        return r0
     rest = candidates[1:]
     if rest:
         sem = asyncio.Semaphore(6)                  # bounded fan-out → stays fast/light

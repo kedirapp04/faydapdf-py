@@ -180,13 +180,10 @@ async def take_pool_token(min_seconds: int | None = None, vip: bool | None = Non
     secs = config.SERVER4_TOKEN_MIN_SECONDS if min_seconds is None else min_seconds
     if secs > 0:
         url += ("&" if "?" in url else "?") + f"min_seconds={secs}"
-    
-    spoof_ip = _random_ip()
-    headers = {"X-CSRF-Token": csrf, "X-Forwarded-For": spoof_ip, "X-Real-IP": spoof_ip}
-    
+    # No IP spoof here — the token pool is our OWN server (no per-IP limits to dodge).
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
-            async with s.get(url, headers=headers) as r:
+            async with s.get(url, headers={"X-CSRF-Token": csrf}) as r:
                 d = await r.json(content_type=None)
                 if str(d.get("status") or "").lower() in ("", "active", "warning"):
                     return str(d.get("token") or d.get("value") or "").strip()
@@ -219,11 +216,7 @@ async def pool_status() -> dict:
     csrf = await _csrf(False)
     if csrf:
         headers["X-CSRF-Token"] = csrf
-    
-    spoof_ip = _random_ip()
-    headers["X-Forwarded-For"] = spoof_ip
-    headers["X-Real-IP"] = spoof_ip
-    
+    # No IP spoof — the token pool / stats is our OWN server.
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
             async with s.get(url, headers=headers) as r:

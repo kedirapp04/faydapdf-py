@@ -19,6 +19,7 @@ import hashlib
 import os
 import secrets
 import time
+import random
 from urllib.parse import urlparse, parse_qs
 
 import aiohttp
@@ -82,7 +83,11 @@ def _iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
 
-def _browser_headers(extra: dict | None = None) -> dict:
+def _random_ip() -> str:
+    return f"{random.randint(20, 219)}.{random.randint(1, 254)}.{random.randint(1, 254)}.{random.randint(1, 254)}"
+
+
+def _browser_headers(extra: dict | None = None, spoof_ip: str | None = None) -> dict:
     base = config.ESIGNET_BASE
     h = {
         "accept": "application/json, text/plain, */*",
@@ -90,6 +95,9 @@ def _browser_headers(extra: dict | None = None) -> dict:
         "referer": f"{base}/login?state=fayda-app",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
     }
+    if spoof_ip:
+        h["X-Forwarded-For"] = spoof_ip
+        h["X-Real-IP"] = spoof_ip
     if extra:
         h.update(extra)
     return h
@@ -104,7 +112,7 @@ def _esignet_headers(sess: dict, extra: dict | None = None) -> dict:
     }
     if extra:
         e.update(extra)
-    return _browser_headers(e)
+    return _browser_headers(e, spoof_ip=sess.get("spoof_ip"))
 
 
 def _oauth_details_request(authorize_url: str) -> dict:
@@ -172,9 +180,13 @@ async def take_pool_token(min_seconds: int | None = None, vip: bool | None = Non
     secs = config.SERVER4_TOKEN_MIN_SECONDS if min_seconds is None else min_seconds
     if secs > 0:
         url += ("&" if "?" in url else "?") + f"min_seconds={secs}"
+    
+    spoof_ip = _random_ip()
+    headers = {"X-CSRF-Token": csrf, "X-Forwarded-For": spoof_ip, "X-Real-IP": spoof_ip}
+    
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
-            async with s.get(url, headers={"X-CSRF-Token": csrf}) as r:
+            async with s.get(url, headers=headers) as r:
                 d = await r.json(content_type=None)
                 if str(d.get("status") or "").lower() in ("", "active", "warning"):
                     return str(d.get("token") or d.get("value") or "").strip()
@@ -207,6 +219,11 @@ async def pool_status() -> dict:
     csrf = await _csrf(False)
     if csrf:
         headers["X-CSRF-Token"] = csrf
+    
+    spoof_ip = _random_ip()
+    headers["X-Forwarded-For"] = spoof_ip
+    headers["X-Real-IP"] = spoof_ip
+    
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
             async with s.get(url, headers=headers) as r:
@@ -216,11 +233,14 @@ async def pool_status() -> dict:
         return {"ok": False, "error": f"{type(e).__name__}: {e}", "url": url}
 
 
-def _backend_headers(app_check: str | None = None) -> dict:
+def _backend_headers(app_check: str | None = None, spoof_ip: str | None = None) -> dict:
     h = {"accept": "application/json, text/plain, */*", "Content-Type": "application/json",
          "x-api-key": config.FAYDA_BACKEND_API_KEY}
     if app_check:
         h["X-Firebase-AppCheck"] = app_check
+    if spoof_ip:
+        h["X-Forwarded-For"] = spoof_ip
+        h["X-Real-IP"] = spoof_ip
     return h
 
 
@@ -235,7 +255,9 @@ async def _authorize(http: aiohttp.ClientSession, pkce: dict, state: str) -> str
             raise RuntimeError("no App Check token (pool empty/unreachable)")
         url = (config.FAYDA_API_BASE + "/api/v2/auth/authorize"
                + f"?codeChallenge={pkce['challenge']}&state={state}")
-        async with http.get(url, headers=_backend_headers(token)) as r:
+        
+        spoof_ip = _random_ip()
+        async with http.get(url, headers=_backend_headers(token, spoof_ip=spoof_ip)) as r:
             data = await r.json(content_type=None)
         template = data.get("data") or data.get("url") or data.get("authUrl") or data
         if not isinstance(template, str) or not template.startswith("http"):
@@ -250,15 +272,15 @@ async def _authorize(http: aiohttp.ClientSession, pkce: dict, state: str) -> str
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
 
 
-async def _init_esignet(http: aiohttp.ClientSession, authorize_url: str) -> dict:
+async def _init_esignet(http: aiohttp.ClientSession, authorize_url: str, spoof_ip: str) -> dict:
     p = urlparse(authorize_url)
     # 1) authorize page (sets cookies)
     async with http.get(f"{config.ESIGNET_BASE}{p.path}?{p.query}",
-                        headers=_browser_headers({"accept": "text/html,application/xhtml+xml,*/*;q=0.8"})):
+                        headers=_browser_headers({"accept": "text/html,application/xhtml+xml,*/*;q=0.8"}, spoof_ip=spoof_ip)):
         pass
     # 2) csrf
     async with http.get(f"{config.ESIGNET_BASE}/v1/esignet/csrf/token",
-                        headers=_browser_headers({"Content-Type": "application/json", "referer": authorize_url})) as r:
+                        headers=_browser_headers({"Content-Type": "application/json", "referer": authorize_url}, spoof_ip=spoof_ip)) as r:
         csrf_data = await r.json(content_type=None)
     xsrf = ""
     for c in http.cookie_jar:
@@ -270,7 +292,7 @@ async def _init_esignet(http: aiohttp.ClientSession, authorize_url: str) -> dict
     # 3) oauth-details
     body = {"requestTime": _iso(), "request": _oauth_details_request(authorize_url)}
     async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/v2/oauth-details",
-                        headers=_browser_headers({"Content-Type": "application/json", "X-XSRF-TOKEN": xsrf, "referer": authorize_url}),
+                        headers=_browser_headers({"Content-Type": "application/json", "X-XSRF-TOKEN": xsrf, "referer": authorize_url}, spoof_ip=spoof_ip),
                         json=body) as r:
         od = await r.json(content_type=None)
     if _esignet_error(od):
@@ -279,7 +301,7 @@ async def _init_esignet(http: aiohttp.ClientSession, authorize_url: str) -> dict
     txn = details.get("transactionId")
     if not txn:
         raise RuntimeError("eSignet oauth-details returned no transactionId")
-    return {"xsrf": xsrf, "oauth_details": details, "oauth_hash": _hash_oauth_details(details), "transaction_id": txn}
+    return {"xsrf": xsrf, "oauth_details": details, "oauth_hash": _hash_oauth_details(details), "transaction_id": txn, "spoof_ip": spoof_ip}
 
 
 class Server4Provider(FaydaProvider):
@@ -291,7 +313,8 @@ class Server4Provider(FaydaProvider):
         try:
             pkce, state = _pkce(), _state()
             authorize_url = await _authorize(http, pkce, state)
-            sess = await _init_esignet(http, authorize_url)
+            spoof_ip = _random_ip()
+            sess = await _init_esignet(http, authorize_url, spoof_ip)
             body = {"requestTime": _iso(), "request": {
                 "transactionId": sess["transaction_id"], "individualId": individual_id,
                 "otpChannels": config.FAYDA_OTP_CHANNELS, "captchaToken": None}}
@@ -349,7 +372,7 @@ class Server4Provider(FaydaProvider):
                 try:
                     async with aiohttp.ClientSession(timeout=_TIMEOUT) as cb:
                         async with cb.post(config.FAYDA_API_BASE + path,
-                                           headers=_backend_headers(token or None), json=cb_body) as r:
+                                           headers=_backend_headers(token or None, spoof_ip=sess.get("spoof_ip")), json=cb_body) as r:
                             cb_status = r.status
                             user = await r.json(content_type=None)
                 except (aiohttp.ClientError, asyncio.TimeoutError) as e:

@@ -158,6 +158,7 @@ async def api_stats():
     d["s4_csrf_regular"] = await _safe(settings_repo.get("s4_csrf_regular"), "") or ""
     d["s4_csrf_vip"] = await _safe(settings_repo.get("s4_csrf_vip"), "") or ""
     d["s4_appcheck"] = await _safe(settings_repo.get("s4_appcheck"), "") or ""
+    d["s4_ip_spoof"] = await _safe(settings_repo.get_bool("s4_ip_spoof", True), True)
     d["vp_base_url"] = await _safe(payment_verify.vp_base_url(), "") or ""
     d["vp_api_key"] = await _safe(payment_verify.vp_api_key(), "") or ""
     return d
@@ -641,6 +642,8 @@ async def api_settings(request: Request):
     for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "vp_base_url", "vp_api_key"):
         if _k in body:
             await settings_repo.set(_k, str(body[_k] or "").strip())
+    if "s4_ip_spoof" in body:
+        await settings_repo.set_bool("s4_ip_spoof", bool(body["s4_ip_spoof"]))
     if "telebirr_list" in body:
         import json as _json
         clean = [{"name": str(r.get("name", "")).strip(), "account": str(r.get("account", "")).strip(),

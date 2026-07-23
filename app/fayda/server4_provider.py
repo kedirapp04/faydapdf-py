@@ -87,6 +87,12 @@ def _random_ip() -> str:
     return f"{random.randint(20, 219)}.{random.randint(1, 254)}.{random.randint(1, 254)}.{random.randint(1, 254)}"
 
 
+async def _spoof_ip() -> str | None:
+    """A random client IP for the Fayda calls (X-Forwarded-For/X-Real-IP), unless the
+    admin turned spoofing OFF via the s4_ip_spoof setting. Default ON."""
+    return _random_ip() if await settings_repo.get_bool("s4_ip_spoof", True) else None
+
+
 def _browser_headers(extra: dict | None = None, spoof_ip: str | None = None) -> dict:
     base = config.ESIGNET_BASE
     h = {
@@ -249,7 +255,7 @@ async def _authorize(http: aiohttp.ClientSession, pkce: dict, state: str) -> str
         url = (config.FAYDA_API_BASE + "/api/v2/auth/authorize"
                + f"?codeChallenge={pkce['challenge']}&state={state}")
         
-        spoof_ip = _random_ip()
+        spoof_ip = await _spoof_ip()
         async with http.get(url, headers=_backend_headers(token, spoof_ip=spoof_ip)) as r:
             data = await r.json(content_type=None)
         template = data.get("data") or data.get("url") or data.get("authUrl") or data
@@ -306,7 +312,7 @@ class Server4Provider(FaydaProvider):
         try:
             pkce, state = _pkce(), _state()
             authorize_url = await _authorize(http, pkce, state)
-            spoof_ip = _random_ip()
+            spoof_ip = await _spoof_ip()
             sess = await _init_esignet(http, authorize_url, spoof_ip)
             body = {"requestTime": _iso(), "request": {
                 "transactionId": sess["transaction_id"], "individualId": individual_id,

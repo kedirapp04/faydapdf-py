@@ -159,6 +159,7 @@ async def api_stats():
     d["s4_csrf_vip"] = await _safe(settings_repo.get("s4_csrf_vip"), "") or ""
     d["s4_appcheck"] = await _safe(settings_repo.get("s4_appcheck"), "") or ""
     d["s4_ip_spoof"] = await _safe(settings_repo.get_bool("s4_ip_spoof", True), True)
+    d["broadcast_via_main"] = await _safe(settings_repo.get_bool("broadcast_via_main", False), False)
     d["vp_base_url"] = await _safe(payment_verify.vp_base_url(), "") or ""
     d["vp_api_key"] = await _safe(payment_verify.vp_api_key(), "") or ""
     return d
@@ -462,7 +463,13 @@ async def api_broadcast(request: Request):
         rows = await pool().fetch(
             f"SELECT telegram_id, last_bot_id FROM users WHERE ({where}) AND COALESCE(is_blocked,false)=false", *args)
     cid = await broadcast_repo.create(title, segment, extra, text, parse_mode, buttons)
-    n = await broadcast_repo.snapshot(cid, [(r["telegram_id"], r["last_bot_id"]) for r in rows])
+    # broadcast_via_main: force EVERY recipient through the primary bot (config.BOT_TOKEN,
+    # e.g. @NID_downloader_bot) instead of each user's last_bot_id. Only reaches users who
+    # started the main bot (Telegram rule), but guarantees one consistent sender.
+    via_main = await settings_repo.get_bool("broadcast_via_main", False)
+    main_bid = config.bot_id_of(config.BOT_TOKEN)
+    recips = [(r["telegram_id"], main_bid if via_main else r["last_bot_id"]) for r in rows]
+    n = await broadcast_repo.snapshot(cid, recips)
     return {"ok": True, "campaign_id": cid, "total": n}
 
 
@@ -644,6 +651,8 @@ async def api_settings(request: Request):
             await settings_repo.set(_k, str(body[_k] or "").strip())
     if "s4_ip_spoof" in body:
         await settings_repo.set_bool("s4_ip_spoof", bool(body["s4_ip_spoof"]))
+    if "broadcast_via_main" in body:
+        await settings_repo.set_bool("broadcast_via_main", bool(body["broadcast_via_main"]))
     if "telebirr_list" in body:
         import json as _json
         clean = [{"name": str(r.get("name", "")).strip(), "account": str(r.get("account", "")).strip(),

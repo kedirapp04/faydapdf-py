@@ -158,6 +158,7 @@
       <span class="muted" style="margin-left:8px">Buttons:</span>
       <input id="bcBtns" style="flex:1;min-width:220px" placeholder="Text | https://url ; Text2 | https://url2">
     </div>
+    <div class="row" style="margin-top:8px"><label class="row" style="gap:6px;align-items:center"><input type="checkbox" id="bcViaMain" onchange="saveSet({broadcast_via_main:this.checked})"> <span class="muted">Send all via the main bot (@NID_downloader_bot) — ignore each user's last bot</span></label></div>
     <div class="row" style="margin-top:8px">
       <input id="bcTitle" style="flex:1;min-width:200px" placeholder="Campaign title (optional)">
       <button class="btn" id="bcBtn" onclick="sendBroadcast()">📢 Create &amp; send</button>
@@ -453,6 +454,7 @@ function renderBilling(s){
   const setv=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||""};
   setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);
   {const cb=$("#s4spoof");if(cb)cb.checked=s.s4_ip_spoof!==false;}
+  {const m=$("#bcViaMain");if(m)m.checked=!!s.broadcast_via_main;}
   setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);
   const g=$("#gprice"),v=$("#vprice");
   if(document.activeElement!==g)g.value=(Number(s.global_price_cents||0)/100);

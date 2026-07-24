@@ -26,6 +26,48 @@ log = logging.getLogger("faydapdf-py.user")
 FAN_RE = re.compile(r"^\d{12,16}$")
 OTP_RE = re.compile(r"^\d{4,10}$")
 PHONE_RE = re.compile(r"^(?:\+?251|0)?9\d{8}$")
+_PHONE_ANY = re.compile(r"(?:\+?251|0)?(9\d{8})")
+
+
+def _sanitize_name(raw: str) -> str:
+    return re.sub(r"[<>]", "", re.sub(r"[\x00-\x1f\x7f]", "", str(raw or ""))).strip()[:100]
+
+
+def _norm_phone(raw) -> "str | None":
+    """0 / +251 / 251 / bare-9 (with spaces, dashes, parens) → 0XXXXXXXXX."""
+    m = re.match(r"^(?:\+?251|0)?(9\d{8})$", re.sub(r"[\s\-()]", "", str(raw or "")))
+    return "0" + m.group(1) if m else None
+
+
+def _parse_name_phone(text: str):
+    """Accept name + phone in flexible layouts — two lines, one line mixed, phone
+    anywhere, or just one piece. Returns (name|None, phone|None); the caller still
+    requires BOTH. Mirrors faydapdf-railway's parseNameAndPhone."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return None, None
+    lines = [ln.strip() for ln in cleaned.splitlines() if ln.strip()]
+    name = phone = None
+    if len(lines) >= 2:
+        for ln in lines:
+            if phone is None:
+                mm = _PHONE_ANY.search(re.sub(r"[\s\-()]", "", ln))
+                if mm:
+                    phone = "0" + mm.group(1)
+                    continue
+            if name is None:
+                name = _sanitize_name(ln)
+    else:
+        ln = lines[0]
+        mm = _PHONE_ANY.search(ln)
+        if mm:
+            phone = "0" + mm.group(1)
+            rest = (ln[:mm.start()] + " " + ln[mm.end():]).strip()
+            if rest:
+                name = _sanitize_name(rest)
+        else:
+            name = _sanitize_name(ln)
+    return name, phone
 
 # One batch of ids is processed one-at-a-time; cap it so a single message can't
 # fire off an unbounded run of pool-token pulls in Server-4 mode.
@@ -390,29 +432,31 @@ async def on_otp(m: Message, state: FSMContext):
 
 # ── forgot-FAN ───────────────────────────────────────────────────────────────
 @router.message(Flow.forgot_name, F.text)
-async def forgot_name(m: Message, state: FSMContext):
-    name = m.text.strip()
-    if len(name.split()) < 2:
-        return await m.answer(i18n.t("forgot_need_fullname"), reply_markup=kb.cancel_kb())
-    await state.update_data(name=name)
-    await state.set_state(Flow.forgot_phone)
-    await m.answer(i18n.t("forgot_phone"), reply_markup=kb.cancel_kb())
-
-
 @router.message(Flow.forgot_phone, F.text)
-async def forgot_phone(m: Message, state: FSMContext):
-    phone = m.text.replace(" ", "")
-    if not PHONE_RE.match(phone):
-        return await m.answer(i18n.t("forgot_bad_phone"), reply_markup=kb.cancel_kb())
+async def forgot_collect(m: Message, state: FSMContext):
+    """Flexible: accept the full name + phone together (any layout) or one at a
+    time. BOTH are mandatory — we keep whatever's provided and ask for the rest."""
     data = await state.get_data()
-    await state.clear()
-    wait = await m.answer(i18n.t("forgot_requesting"))
-    # Recovery is independent of the download mode — always via API if configured.
-    res = await fayda.forgot_fan(data.get("name", ""), phone)
-    if res.get("ok"):
-        await wait.edit_text(i18n.t("forgot_done", phone=res.get("phone") or "your phone"))
-    else:
-        await wait.edit_text(i18n.t("forgot_err", error=res.get("error")))
+    pn, pp = _parse_name_phone(m.text)
+    # A name counts only as a FULL name (≥ 2 words); keep anything already collected.
+    name = data.get("name") or (pn if pn and len(pn.split()) >= 2 else None)
+    phone = data.get("phone") or pp
+    if name and phone:
+        await state.clear()
+        wait = await m.answer(i18n.t("forgot_requesting"))
+        res = await fayda.forgot_fan(name, phone)
+        if res.get("ok"):
+            await wait.edit_text(i18n.t("forgot_done", phone=res.get("phone") or "your phone"))
+        else:
+            await wait.edit_text(i18n.t("forgot_err", error=res.get("error")))
+        return
+    await state.update_data(name=name, phone=phone)
+    if not name:
+        await state.set_state(Flow.forgot_name)
+        return await m.answer(i18n.t("forgot_need_fullname"), reply_markup=kb.cancel_kb())
+    await state.set_state(Flow.forgot_phone)
+    prompt = "forgot_bad_phone" if (pp is None and data.get("name")) else "forgot_phone"
+    await m.answer(i18n.t(prompt), reply_markup=kb.cancel_kb())
 
 
 # ── add-balance: receipt submission (auto-verify → auto-approve, else manual) ─

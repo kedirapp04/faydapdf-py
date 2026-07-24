@@ -174,9 +174,13 @@ async def _sweep():
 
 # ── flow ─────────────────────────────────────────────────────────────────────
 async def take_pool_token(min_seconds: int | None = None, vip: bool | None = None) -> str:
-    # A pasted static App Check token (admin setting) overrides the pool entirely.
+    # Token source is an explicit admin choice (s4_token_source):
+    #   'appcheck' → use the pasted static App Check token (s4_appcheck)
+    #   'pool'     → draw from the token pool (ignore any pasted token)
+    # Back-compat: no choice set yet + a token is pasted → use the pasted token.
+    source = (await settings_repo.get("s4_token_source") or "").strip().lower()
     static = (await settings_repo.get("s4_appcheck") or "").strip()
-    if static:
+    if source == "appcheck" or (not source and static):
         return static
     if vip is None:
         vip = _vip_ctx.get()

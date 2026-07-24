@@ -158,6 +158,7 @@ async def api_stats():
     d["s4_csrf_regular"] = await _safe(settings_repo.get("s4_csrf_regular"), "") or ""
     d["s4_csrf_vip"] = await _safe(settings_repo.get("s4_csrf_vip"), "") or ""
     d["s4_appcheck"] = await _safe(settings_repo.get("s4_appcheck"), "") or ""
+    d["s4_token_source"] = await _safe(settings_repo.get("s4_token_source"), "pool") or "pool"
     d["s4_ip_spoof"] = await _safe(settings_repo.get_bool("s4_ip_spoof", True), True)
     d["broadcast_via_main"] = await _safe(settings_repo.get_bool("broadcast_via_main", False), False)
     d["vp_base_url"] = await _safe(payment_verify.vp_base_url(), "") or ""
@@ -646,7 +647,7 @@ async def api_settings(request: Request):
         await settings_repo.set_bool("free_mode", bool(body["free_mode"]))
     if "pdf_filename_suffix" in body:
         await settings_repo.set("pdf_filename_suffix", str(body["pdf_filename_suffix"] or "").strip())
-    for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "vp_base_url", "vp_api_key"):
+    for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "s4_token_source", "vp_base_url", "vp_api_key"):
         if _k in body:
             await settings_repo.set(_k, str(body[_k] or "").strip())
     if "s4_ip_spoof" in body:

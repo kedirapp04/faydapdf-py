@@ -225,7 +225,8 @@
     <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">Token pool X-CSRF — Regular users</span><input id="s4reg" style="flex:1;min-width:220px" placeholder="regular pool X-CSRF token"/></div>
     <div class="row" style="margin-bottom:6px"><span class="muted" style="width:230px">Token pool X-CSRF — ⭐ VIP users</span><input id="s4vip" style="flex:1;min-width:220px" placeholder="leave blank → regular pool"/></div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">Regular and VIP users draw Server 4 tokens from different pools via these X-CSRF tokens. Leave VIP blank to send VIP users to the regular pool.</div>
-    <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">App Check token (optional)</span><textarea id="s4app" style="min-height:54px" placeholder="paste a static App Check JWT to bypass the pool"></textarea></div>
+    <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">Token source</span><select id="s4src" style="flex:1;min-width:220px"><option value="pool">Pool token</option><option value="appcheck">App Check token (pasted below)</option></select></div>
+    <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">App Check token (optional)</span><textarea id="s4app" style="min-height:54px" placeholder="paste a static App Check JWT; used when Token source = App Check token"></textarea></div>
     <div class="row" style="margin-bottom:8px"><span class="muted" style="width:230px">IP spoofing</span><label class="row" style="gap:6px;align-items:center"><input type="checkbox" id="s4spoof"/> send a random X-Forwarded-For / X-Real-IP on Fayda calls</label></div>
     <button class="btn" onclick="saveServer4()">Save Server 4</button>
     <div class="row" style="margin-top:12px">
@@ -452,7 +453,7 @@ function renderBilling(s){
   const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=s.mode==="server4"?"server4":"api";
   $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
   const setv=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||""};
-  setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);
+  setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);setv("#s4src",s.s4_token_source||"pool");
   {const cb=$("#s4spoof");if(cb)cb.checked=s.s4_ip_spoof!==false;}
   {const m=$("#bcViaMain");if(m)m.checked=!!s.broadcast_via_main;}
   setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);
@@ -475,7 +476,7 @@ function renderBilling(s){
   set("#tb_name",tb.name);set("#tb_acct",tb.account);set("#cbe_name",cb.name);set("#cbe_acct",cb.account);
 }
 async function togglePause(){const s=await api("/api/stats");await saveSet({paused:!s.paused})}
-async function saveServer4(){await saveSet({s4_csrf_regular:$("#s4reg").value,s4_csrf_vip:$("#s4vip").value,s4_appcheck:$("#s4app").value,s4_ip_spoof:$("#s4spoof").checked})}
+async function saveServer4(){await saveSet({s4_csrf_regular:$("#s4reg").value,s4_csrf_vip:$("#s4vip").value,s4_appcheck:$("#s4app").value,s4_token_source:$("#s4src").value,s4_ip_spoof:$("#s4spoof").checked})}
 async function saveSet(o){await api("/api/settings",{method:"POST",body:JSON.stringify(o)});toast("Saved");refresh()}
 async function savePrices(){await saveSet({global_price_birr:$("#gprice").value,vip_price_birr:$("#vprice").value})}
 async function saveAccounts(){

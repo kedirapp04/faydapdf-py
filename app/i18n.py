@@ -139,10 +139,10 @@ CATALOG = {
     "paused": {"en": "⏸ The service is paused for maintenance. Please try again later.",
                "am": "⏸ አገልግሎቱ ለጥገና ቆሟል። እባክዎ ቆየት ብለው ይሞክሩ።"},
     # forgot-FAN
-    "forgot_name": {"en": "🔑 Forgot FAN/FIN — free.\n\nSend your FULL NAME and REGISTERED PHONE "
-                          "— together or one at a time (e.g. Abebe Kebede Alemu 0911223344):",
-                    "am": "🔑 FAN/FIN ረሱ — ነፃ።\n\nሙሉ ስምዎን እና የተመዘገበ ስልክ ቁጥርዎን ይላኩ "
-                          "— አብረው ወይም ለየብቻ (ለምሳሌ፦ አበበ ከበደ አለሙ 0911223344)፦"},
+    "forgot_name": {"en": "🔑 Forgot FAN/FIN — free.\n\nSend your FULL NAME (in ENGLISH only) and "
+                          "REGISTERED PHONE — together or one at a time (e.g. Abebe Kebede Alemu 0911223344):",
+                    "am": "🔑 FAN/FIN ረሱ — ነፃ።\n\nሙሉ ስምዎን (በእንግሊዝኛ ብቻ) እና የተመዘገበ ስልክ ቁጥርዎን ይላኩ "
+                          "— አብረው ወይም ለየብቻ (ለምሳሌ፦ Abebe Kebede Alemu 0911223344)፦"},
     "forgot_need_fullname": {"en": "Please send your FULL name in ENGLISH (e.g. Abebe Kebede Alemu), or tap Cancel.",
                              "am": "እባክዎ ሙሉ ስምዎን በእንግሊዝኛ ይላኩ (ለምሳሌ፦ Abebe Kebede Alemu)፣ ወይም Cancel ይጫኑ።"},
     "forgot_phone": {"en": "📱 Now send your REGISTERED phone number (e.g. 0911223344):",

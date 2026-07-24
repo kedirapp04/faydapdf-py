@@ -143,8 +143,8 @@ CATALOG = {
                           "— together or one at a time (e.g. Abebe Kebede Alemu 0911223344):",
                     "am": "🔑 FAN/FIN ረሱ — ነፃ።\n\nሙሉ ስምዎን እና የተመዘገበ ስልክ ቁጥርዎን ይላኩ "
                           "— አብረው ወይም ለየብቻ (ለምሳሌ፦ አበበ ከበደ አለሙ 0911223344)፦"},
-    "forgot_need_fullname": {"en": "Please send your FULL name (e.g. Abebe Kebede Alemu), or tap Cancel.",
-                             "am": "እባክዎ ሙሉ ስምዎን ይላኩ (ለምሳሌ፦ አበበ ከበደ አለሙ)፣ ወይም Cancel ይጫኑ።"},
+    "forgot_need_fullname": {"en": "Please send your FULL name in ENGLISH (e.g. Abebe Kebede Alemu), or tap Cancel.",
+                             "am": "እባክዎ ሙሉ ስምዎን በእንግሊዝኛ ይላኩ (ለምሳሌ፦ Abebe Kebede Alemu)፣ ወይም Cancel ይጫኑ።"},
     "forgot_phone": {"en": "📱 Now send your REGISTERED phone number (e.g. 0911223344):",
                      "am": "📱 አሁን የተመዘገበ ስልክ ቁጥርዎን ይላኩ (ለምሳሌ፦ 0911223344)፦"},
     "forgot_bad_phone": {"en": "Send a valid Ethiopian phone (e.g. 0911223344), or tap Cancel.",

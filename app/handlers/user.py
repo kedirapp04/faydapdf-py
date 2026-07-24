@@ -33,6 +33,11 @@ def _sanitize_name(raw: str) -> str:
     return re.sub(r"[<>]", "", re.sub(r"[\x00-\x1f\x7f]", "", str(raw or ""))).strip()[:100]
 
 
+def _name_ok(n) -> bool:
+    """A valid FULL name in ENGLISH only: ≥ 2 Latin-letter words (no Amharic/other script)."""
+    return bool(n) and len(n.split()) >= 2 and re.fullmatch(r"[A-Za-z][A-Za-z '.\-]*", n) is not None
+
+
 def _norm_phone(raw) -> "str | None":
     """0 / +251 / 251 / bare-9 (with spaces, dashes, parens) → 0XXXXXXXXX."""
     m = re.match(r"^(?:\+?251|0)?(9\d{8})$", re.sub(r"[\s\-()]", "", str(raw or "")))
@@ -439,7 +444,7 @@ async def forgot_collect(m: Message, state: FSMContext):
     data = await state.get_data()
     pn, pp = _parse_name_phone(m.text)
     # A name counts only as a FULL name (≥ 2 words); keep anything already collected.
-    name = data.get("name") or (pn if pn and len(pn.split()) >= 2 else None)
+    name = data.get("name") or (pn if _name_ok(pn) else None)
     phone = data.get("phone") or pp
     if name and phone:
         await state.clear()

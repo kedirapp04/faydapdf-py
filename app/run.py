@@ -15,6 +15,7 @@ For a VPS you can still run the two separately (`python -m app.main` and
 """
 import asyncio
 import logging
+import signal
 
 import uvicorn
 
@@ -66,7 +67,26 @@ async def main() -> None:
         await close_pool()
 
 
+def _install_stop_handlers() -> None:
+    """Exit promptly + cleanly when the supervisor (pm2 / Railway) asks us to stop, so we
+    never linger holding the web port after a restart. SIGTERM is what Railway and
+    `pm2 stop/restart` send; SIGBREAK is the Windows console stop. Converting them to
+    KeyboardInterrupt lets asyncio.run() unwind through main()'s `finally: close_pool()`
+    instead of the default action (SIGTERM would otherwise kill us with the pool open,
+    and on Windows a soft signal we ignore is exactly what leaves an orphan behind)."""
+    def _stop(_signum, _frame):
+        raise KeyboardInterrupt
+    for name in ("SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _stop)
+            except (ValueError, OSError):
+                pass
+
+
 if __name__ == "__main__":
+    _install_stop_handlers()
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):

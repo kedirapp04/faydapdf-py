@@ -123,28 +123,68 @@ async def _load_policy() -> None:
         pass
 
 
-async def _probe() -> bool:
+async def _probe(timeout: float = 8.0) -> bool:
+    """Is Postgres reachable right now? The whole probe (connect/acquire + query) runs
+    under ONE total timeout so it can never hang — a hang here would freeze the recovery
+    monitor and the DB would stay 'down' forever.
+
+    While DOWN, the pool's connections are likely stale (a network blip leaves asyncpg
+    holding sockets the server/pooler already closed — 'connection was closed in the
+    middle of operation'). A pooled ping would keep failing on those and never notice the
+    DB is back, so we test with a FRESH short-lived connection instead. While UP, a cheap
+    pooled ping is enough and opens no extra connections.
+
+    `timeout` is passed generously while DOWN: this DB is remote (Railway PG reached over
+    a long link), so a healthy connect can still take several seconds — a tight timeout
+    would reject those and recovery would never stick."""
     if _pool is None:
         return False
     try:
-        async with _pool.acquire() as conn:
-            await asyncio.wait_for(conn.execute("SELECT 1"), timeout=5)
+        async with asyncio.timeout(timeout):
+            if _db_ready:
+                async with _pool.acquire() as conn:
+                    await conn.execute("SELECT 1")
+            else:
+                conn = await asyncpg.connect(dsn=config.DATABASE_URL, statement_cache_size=0)
+                try:
+                    await conn.execute("SELECT 1")
+                finally:
+                    await conn.close()
         return True
     except Exception:
         return False
 
 
 async def health_loop(interval: float = 10.0) -> None:
-    """Background monitor: ping Postgres every `interval`s and flip dbReady. On
-    recovery it also re-reads the policy from settings. Never returns."""
+    """Background monitor: ping Postgres and flip dbReady. On recovery it flushes the
+    pool's now-stale connections (so real queries reconnect fresh instead of re-tripping
+    the down flag) and re-reads the policy. Bulletproof: one iteration can never kill the
+    monitor. Never returns.
+
+    Adaptive cadence: while UP, a light 8s-timeout ping every `interval`s. While DOWN,
+    poll every 3s with a 20s timeout — a slow remote DB needs the extra room, and the
+    faster cadence catches the brief windows it's reachable so 'unavailable' clears in
+    seconds instead of minutes."""
     global _db_ready
     while True:
-        await asyncio.sleep(interval)
-        ok = await _probe()
-        if ok and not _db_ready:
-            _db_ready = True
-            log.warning("DB recovered")
-            await _load_policy()
-        elif not ok and _db_ready:
-            _db_ready = False
-            log.warning("DB DOWN (health probe failed)")
+        try:
+            down = not _db_ready
+            await asyncio.sleep(3 if down else interval)
+            ok = await _probe(timeout=20 if down else 8)
+            if ok and not _db_ready:
+                _db_ready = True
+                log.warning("DB recovered")
+                try:
+                    # Drop every connection the pool is holding; the next acquire() for a
+                    # real query opens a fresh one, so a recovered DB actually serves again.
+                    await asyncio.wait_for(_pool.expire_connections(), timeout=10)
+                except Exception:
+                    log.exception("expire_connections after recovery failed")
+                await _load_policy()
+            elif not ok and _db_ready:
+                _db_ready = False
+                log.warning("DB DOWN (health probe failed)")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("health_loop iteration error — continuing")

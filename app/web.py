@@ -153,6 +153,8 @@ async def api_stats():
     wb = await _safe(settings_repo.get("welcome_bonus_cents"), None)
     d["welcome_bonus_cents"] = int(wb) if wb is not None and str(wb).lstrip("-").isdigit() else users_repo.DEFAULT_WELCOME_BONUS_CENTS
     d["free_mode"] = await _safe(settings_repo.get_bool("free_mode", False), False)
+    d["topup_bonus_enabled"] = await _safe(billing.topup_bonus_enabled(), True)
+    d["topup_bonus_tiers"] = billing._fmt_tiers(await _safe(billing.topup_bonus_tiers(), []))
     d["pdf_filename_suffix"] = await _safe(settings_repo.get("pdf_filename_suffix"), "") or ""
     d["telebirr_receivers"] = await _safe(payment_verify.telebirr_receivers(), [])
     d["s4_csrf_regular"] = await _safe(settings_repo.get("s4_csrf_regular"), "") or ""
@@ -535,6 +537,8 @@ async def api_approve(pid: int, request: Request):
     if not res.get("ok"):
         raise HTTPException(400, res.get("error"))
     await _notify(res["user_id"], i18n.t("approved_notify", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
+    if res.get("bonus_cents"):
+        await _notify(res["user_id"], i18n.t("bonus_notify", amount=billing.birr(res["bonus_cents"]), bonus=billing.birr(res["bonus_balance_cents"])))
     return res
 
 
@@ -614,6 +618,9 @@ async def api_bulk_approve(request: Request):
             approved.append({"id": pid, "amount_cents": amt})
             await _notify(res["user_id"], i18n.t("approved_notify",
                           amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
+            if res.get("bonus_cents"):
+                await _notify(res["user_id"], i18n.t("bonus_notify",
+                              amount=billing.birr(res["bonus_cents"]), bonus=billing.birr(res["bonus_balance_cents"])))
         else:
             skipped.append({"id": pid, "reason": res.get("error")})
     return {"approved": approved, "skipped": skipped}
@@ -645,6 +652,10 @@ async def api_settings(request: Request):
         await settings_repo.set("welcome_bonus_cents", str(_cents(body["welcome_bonus_birr"]) or 0))
     if "free_mode" in body:
         await settings_repo.set_bool("free_mode", bool(body["free_mode"]))
+    if "topup_bonus_enabled" in body:
+        await billing.set_topup_bonus_enabled(bool(body["topup_bonus_enabled"]))
+    if "topup_bonus_tiers" in body:
+        await billing.set_topup_bonus_tiers(str(body["topup_bonus_tiers"] or ""))
     if "pdf_filename_suffix" in body:
         await settings_repo.set("pdf_filename_suffix", str(body["pdf_filename_suffix"] or "").strip())
     for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "s4_token_source", "vp_base_url", "vp_api_key"):

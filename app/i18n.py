@@ -234,6 +234,8 @@ CATALOG = {
                         "am": "💵 {amount} በአስተዳዳሪው ወደ ቀሪ ሂሳብዎ ተጨምሯል።\nአዲስ ቀሪ ሂሳብ፦ {balance}።"},
     "bonus_notify": {"en": "🎁 You received a {amount} bonus!\nBonus balance: {bonus} (used before your normal balance).",
                      "am": "🎁 {amount} ጉርሻ አግኝተዋል!\nየጉርሻ ቀሪ ሂሳብ፦ {bonus} (ከመደበኛ ሂሳብዎ በፊት ይውላል)።"},
+    "topup_bonus_intro": {"en": "🎁 Top-up bonus — the more you add, the bigger the bonus (added to your bonus wallet, spent first):",
+                          "am": "🎁 የመሙያ ጉርሻ — በጨመሩ ቁጥር ተጨማሪ ጉርሻ ያገኛሉ (ወደ ጉርሻ ቦርሳዎ ተጨምሮ መጀመሪያ ይውላል)፦"},
     # wallet
     "wallet_header": {"en": "💳 Wallet — {mode}", "am": "💳 ቀሪ ሂሳብ — {mode}"},
     "wallet_balance": {"en": "Balance: {balance}", "am": "ቀሪ ሂሳብ፦ {balance}"},

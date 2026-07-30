@@ -216,6 +216,13 @@
       <label class="chk" style="margin-left:16px"><input type="checkbox" id="freeMode" onchange="saveSet({free_mode:this.checked})"> 🆓 Free mode (all downloads free)</label>
     </div>
     <div class="row" style="margin-top:12px">
+      <label class="chk"><input type="checkbox" id="topupBonusOn" onchange="saveSet({topup_bonus_enabled:this.checked})"> 🎁 Top-up bonus</label>
+      <span class="muted" style="margin-left:12px">Tiers (min:pct):</span>
+      <input id="topupBonusTiers" style="min-width:260px" placeholder="200:10 500:15 1000:20 2000:25" title="minBirr:percent pairs — a top-up gets the % of the highest tier it reaches"/>
+      <button class="btn sec" onclick="saveSet({topup_bonus_tiers:$('#topupBonusTiers').value})">Save tiers</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Bonus = the % of the highest tier a top-up reaches, added to the user's <b>bonus wallet</b> (spent before their balance). Format: space-separated <code>minBirr:percent</code>. Uncheck to disable without losing the values.</div>
+    <div class="row" style="margin-top:12px">
       <span class="muted">📄 PDF filename suffix:</span><input id="pdfSuffix" style="min-width:200px" placeholder="@NID_downloader_bot"/>
       <button class="btn sec" onclick="saveSet({pdf_filename_suffix:$('#pdfSuffix').value})">Save</button>
     </div>
@@ -468,6 +475,8 @@ function renderBilling(s){
   const av=$("#showAV");if(av)av.checked=!!s.show_autoverify;
   const wb=$("#welcomeBonus");if(wb&&document.activeElement!==wb)wb.value=(Number(s.welcome_bonus_cents||0)/100);
   const fm=$("#freeMode");if(fm)fm.checked=!!s.free_mode;
+  const tbo=$("#topupBonusOn");if(tbo)tbo.checked=!!s.topup_bonus_enabled;
+  const tbt=$("#topupBonusTiers");if(tbt&&document.activeElement!==tbt)tbt.value=s.topup_bonus_tiers||"";
   const ps=$("#pdfSuffix");if(ps&&document.activeElement!==ps)ps.value=s.pdf_filename_suffix||"";
   const tl=$("#tbList"),recs=s.telebirr_receivers||[];
   if(tl&&document.activeElement!==tl)tl.value=recs.slice(1).map(r=>`${r.name} | ${r.account} | ${r.show?1:0} | ${r.verify?1:0}`).join("\n");

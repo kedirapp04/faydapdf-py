@@ -3,6 +3,8 @@
 Money is cents everywhere. `charge_and_log` logs the download AND moves money for
 the user's billing mode in ONE transaction, so a download can never be delivered
 without being accounted for (or vice-versa)."""
+import re
+
 from ..db import pool
 from .. import config, i18n
 from ..repo import wallet
@@ -14,6 +16,87 @@ VIP_DISCOUNT_KEY = "vip_price_cents"
 def birr(cents: int) -> str:
     cents = int(cents or 0)
     return f"{cents / 100:.2f}".rstrip("0").rstrip(".") + " Birr"
+
+
+# ── top-up bonus tiers (admin-editable via /topupbonus) ───────────────────────
+# When a user's approved top-up reaches a tier, grant that % to the BONUS wallet
+# (spent before the normal balance). A tier is (min_birr, pct); the % applied is the
+# HIGHEST tier whose min_birr <= the top-up amount. Below the lowest tier → no bonus.
+DEFAULT_TOPUP_BONUS_TIERS = [(200, 10), (500, 15), (1000, 20), (2000, 25)]
+TOPUP_BONUS_KEY = "topup_bonus_tiers"
+TOPUP_BONUS_ENABLED_KEY = "topup_bonus_enabled"
+
+
+async def topup_bonus_enabled() -> bool:
+    """Master on/off for the top-up bonus (kept separate from the tier values so toggling
+    off doesn't erase them). Default ON."""
+    return await settings_repo.get_bool(TOPUP_BONUS_ENABLED_KEY, True)
+
+
+async def set_topup_bonus_enabled(on: bool) -> None:
+    await settings_repo.set_bool(TOPUP_BONUS_ENABLED_KEY, bool(on))
+
+
+def _parse_tiers(spec: str) -> list:
+    """'min:pct min:pct …' (space/comma separated) → sorted [(min_birr, pct)]. Bad
+    entries are skipped; empty/None → [] (bonus disabled)."""
+    out = []
+    for part in re.split(r"[,\s]+", (spec or "").strip()):
+        if not part:
+            continue
+        try:
+            m_s, p_s = part.split(":")
+            m, p = int(float(m_s)), int(float(p_s))
+        except (ValueError, TypeError):
+            continue
+        if m >= 0 and 0 <= p <= 100:
+            out.append((m, p))
+    return sorted(set(out))
+
+
+def _fmt_tiers(tiers: list) -> str:
+    return " ".join(f"{m}:{p}" for m, p in tiers)
+
+
+async def topup_bonus_tiers() -> list:
+    """Admin-set tiers, or the default promo if never configured. An explicit '' disables."""
+    v = await settings_repo.get(TOPUP_BONUS_KEY)
+    if v is None:
+        return list(DEFAULT_TOPUP_BONUS_TIERS)
+    return _parse_tiers(v)
+
+
+async def set_topup_bonus_tiers(spec: str) -> list:
+    tiers = _parse_tiers(spec)
+    await settings_repo.set(TOPUP_BONUS_KEY, _fmt_tiers(tiers))
+    return tiers
+
+
+async def topup_bonus_cents(amount_cents: int) -> int:
+    """Bonus (cents) for an approved top-up: amount × (highest tier ≤ amount)%. 0 if the
+    bonus is off, the amount is 0, or no tier is reached."""
+    amount_cents = int(amount_cents or 0)
+    if amount_cents <= 0 or not await topup_bonus_enabled():
+        return 0
+    pct = 0
+    for min_birr, tier_pct in await topup_bonus_tiers():   # ascending
+        if amount_cents >= min_birr * 100:
+            pct = tier_pct
+    return amount_cents * pct // 100
+
+
+async def topup_bonus_lines() -> str:
+    """Language-neutral tier list for the add-balance screen / admin view (as ranges).
+    Empty string when the bonus is disabled."""
+    tiers = await topup_bonus_tiers()
+    if not tiers:
+        return ""
+    lines = []
+    for i, (m, p) in enumerate(tiers):
+        high = tiers[i + 1][0] - 1 if i + 1 < len(tiers) else None
+        rng = f"{m}–{high}" if high is not None else f"{m}+"
+        lines.append(f"  • {rng} Birr → +{p}%")
+    return "\n".join(lines)
 
 
 async def global_price_cents() -> int:

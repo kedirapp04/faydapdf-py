@@ -268,6 +268,10 @@ async def buttons(m: Message, state: FSMContext):
         await state.set_state(Flow.receipt)
         recv = await payment_verify.receiver_block()
         msg = i18n.t("addpay_full", recv=recv or "—")
+        if await billing.topup_bonus_enabled():      # tiered top-up bonus strategy
+            bonus = await billing.topup_bonus_lines()
+            if bonus:
+                msg += "\n\n" + i18n.t("topup_bonus_intro") + "\n" + bonus
         return await m.answer(msg, reply_markup=kb.cancel_kb())
     if text == kb.BTN_ADMIN:
         if config.is_admin(m.from_user.id):
@@ -498,6 +502,9 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
             return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
         res = await payments_repo.approve(payment["id"], f"auto:{v.get('provider')}", int(v["amount_cents"]))
         if res.get("ok"):
+            if res.get("bonus_cents"):
+                await m.answer(i18n.t("bonus_notify", amount=billing.birr(res["bonus_cents"]),
+                                      bonus=billing.birr(res["bonus_balance_cents"])))
             return await wait.edit_text(i18n.t("verified_added", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
 
     bank = v.get("bank") or payment_verify.detect_bank(receipt_id)

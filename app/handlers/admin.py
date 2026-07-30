@@ -393,8 +393,12 @@ async def on_pay_amount(m: Message, state: FSMContext):
     res = await payments_repo.approve(int(data["payment_id"]), m.from_user.id, cents)
     if not res.get("ok"):
         return await m.answer(f"⚠️ Couldn't approve: {res.get('error')}")
-    await m.answer(f"✅ Approved. Credited {billing.birr(res['amount_cents'])}. New balance: {billing.birr(res['balance_cents'])}.")
+    bonus_line = f" (+{billing.birr(res['bonus_cents'])} bonus)" if res.get("bonus_cents") else ""
+    await m.answer(f"✅ Approved. Credited {billing.birr(res['amount_cents'])}{bonus_line}. New balance: {billing.birr(res['balance_cents'])}.")
     await notify.notify_user(res["user_id"], i18n.t("approved_notify", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
+    if res.get("bonus_cents"):
+        await notify.notify_user(res["user_id"], i18n.t("bonus_notify",
+            amount=billing.birr(res["bonus_cents"]), bonus=billing.birr(res["bonus_balance_cents"])))
 
 
 @router.callback_query(F.data.startswith("pay_no:"))
@@ -637,3 +641,32 @@ async def bonus_cmd(m: Message):
             new_bonus = await wallet.credit_bonus(conn, int(target), cents)   # separate wallet, spent first
     await m.answer(f"🎁 Bonus {billing.birr(cents)} granted to {target}. Bonus wallet: {billing.birr(new_bonus)}.")
     await notify.notify_user(target, i18n.t("bonus_notify", amount=billing.birr(cents), bonus=billing.birr(new_bonus)))
+
+
+# ── top-up bonus tiers: /topupbonus [min:pct …|off] ──────────────────────────
+@router.message(Command("topupbonus"))
+async def topupbonus_cmd(m: Message):
+    if not config.is_admin(m.from_user.id):
+        return
+    parts = (m.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        on = await billing.topup_bonus_enabled()
+        body = await billing.topup_bonus_lines() or "  (no tiers set)"
+        return await m.answer(
+            f"🎁 <b>Top-up bonus</b> — {'ON' if on else 'OFF'}\n" + body +
+            "\n\nA top-up gets the % of the highest tier it reaches (added to the bonus "
+            "wallet, spent before balance).\n"
+            "Set tiers: <code>/topupbonus 200:10 500:15 1000:20 2000:25</code>\n"
+            "Toggle: <code>/topupbonus on</code> · <code>/topupbonus off</code>")
+    low = parts[1].strip().lower()
+    if low in ("off", "disable", "0"):
+        await billing.set_topup_bonus_enabled(False)
+        return await m.answer("🎁 Top-up bonus turned OFF (tier values kept).")
+    if low in ("on", "enable", "1"):
+        await billing.set_topup_bonus_enabled(True)
+        body = await billing.topup_bonus_lines() or "  (no tiers set)"
+        return await m.answer("🎁 Top-up bonus turned ON:\n" + body)
+    await billing.set_topup_bonus_tiers(parts[1].strip())
+    await billing.set_topup_bonus_enabled(True)   # setting tiers implies ON
+    body = await billing.topup_bonus_lines() or "  (none)"
+    await m.answer("✅ Top-up bonus updated (ON):\n" + body)

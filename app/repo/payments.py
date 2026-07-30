@@ -76,11 +76,23 @@ async def approve(payment_id: int, admin_id, amount_cents: int | None = None,
             new_balance = await wallet.credit(
                 conn, pay["user_id"], int(amount), "topup", ref_type="payment", ref_id=int(payment_id)
             )
+            # Tiered top-up bonus (admin-editable) → bonus wallet, in the SAME transaction
+            # so a credited top-up and its bonus can never disagree. Applies to every
+            # approval path (manual, auto-verify, web).
+            from ..services import billing
+            bonus_cents = await billing.topup_bonus_cents(int(amount))
+            new_bonus = None
+            if bonus_cents > 0:
+                new_bonus = await wallet.credit_bonus(
+                    conn, pay["user_id"], bonus_cents, "topup_bonus",
+                    ref_type="payment", ref_id=int(payment_id))
             return {
                 "ok": True,
                 "user_id": pay["user_id"],
                 "amount_cents": int(amount),
                 "balance_cents": new_balance,
+                "bonus_cents": bonus_cents,
+                "bonus_balance_cents": new_bonus,
             }
 
 

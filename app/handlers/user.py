@@ -606,6 +606,17 @@ async def _submit_receipt_text(m: Message, text: str) -> bool:
 
 @router.message(Flow.receipt, F.text)
 async def on_receipt(m: Message, state: FSMContext):
+    # If the user pastes a FIN/FAN while in the Add-Payment step, they meant to DOWNLOAD —
+    # switch to the download flow instead of asking for a transaction number. A receipt
+    # reference always contains a letter, so a bare 12–16-digit number is unambiguously an
+    # ID, never a Telebirr/CBE code.
+    fans, dropped = _parse_fans(m.text)
+    if fans:
+        blk = await _maint_block_download(m.from_user.id)
+        await state.clear()
+        if blk:
+            return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
+        return await _ask_format(m, state, fans, dropped)
     blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments too
     if blk:
         await state.clear()

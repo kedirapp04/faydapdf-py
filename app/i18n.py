@@ -166,8 +166,14 @@ CATALOG = {
                         "• 10-ቁምፊ transaction number (ለምሳሌ DGI70RYNL7)\n"
                         "📷 …ወይም የTelebirr ደረሰኝ ስክሪንሾት ይላኩ — አነባለሁ።\n\n"
                         "Auto-check ከተከፈተ ብሩ ከተረጋገጠ በኋላ ይጨመራል፤ አለበለዚያ አስተዳዳሪ ያጸድቀዋል።")},
-    "send_txn_short": {"en": "Send the transaction number (8–14 characters), a screenshot, or tap Cancel.",
-                       "am": "የግብይት ቁጥር (8–14 ቁምፊ)፣ ስክሪንሾት ይላኩ፣ ወይም Cancel ይጫኑ።"},
+    "send_txn_short": {"en": ("❓ That's not a receipt or a FIN/FAN.\n"
+                              "• To add balance: send your Telebirr/CBE transaction number, receipt link, or screenshot.\n"
+                              "• To download an ID: send a 12- or 16-digit FIN/FAN.\n"
+                              "Or tap Cancel."),
+                       "am": ("❓ ይህ ደረሰኝም FIN/FAN አይደለም።\n"
+                              "• ሂሳብ ለመሙላት፦ የTelebirr/CBE transaction number፣ የደረሰኝ ሊንክ ወይም ስክሪንሾት ይላኩ።\n"
+                              "• መታወቂያ ለማውረድ፦ ባለ 12 ወይም 16 ዲጂት FIN/FAN ይላኩ።\n"
+                              "ወይም Cancel ይጫኑ።")},
     # Full trilingual Add-Payment message. {recv} = the receiver bullet lines (shown
     # at the top AND repeated at the bottom). Single-language slot → rendered once.
     "addpay_full": {"en": (

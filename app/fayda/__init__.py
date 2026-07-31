@@ -15,22 +15,45 @@ def _make(mode: str):
     return ApiProvider()
 
 
-async def active_mode() -> str:
+async def active_mode(bot_id: int | None = None) -> str:
+    """The active download mode. A per-bot override (settings key `fayda_mode_<bot_id>`)
+    wins when set; otherwise the global `fayda_mode`; otherwise the env default."""
     try:
-        mode = await settings_repo.get("fayda_mode", config.FAYDA_MODE_DEFAULT)
+        mode = ""
+        if bot_id is not None:
+            mode = (await settings_repo.get(f"fayda_mode_{bot_id}") or "").strip()
+        if not mode:
+            mode = await settings_repo.get("fayda_mode", config.FAYDA_MODE_DEFAULT)
     except Exception:
         mode = config.FAYDA_MODE_DEFAULT   # DB down → fall back to the env default
     return "server4" if mode == "server4" else "api"
 
 
-async def set_mode(mode: str) -> str:
+async def set_mode(mode: str, bot_id: int | None = None) -> str:
+    """Set the GLOBAL mode, or a PER-BOT override when bot_id is given. For a per-bot
+    override, mode 'global' (or empty) CLEARS it so that bot follows the global mode."""
+    if bot_id is not None:
+        if mode in ("global", "", None):
+            await settings_repo.set(f"fayda_mode_{bot_id}", "")
+            return "global"
+        mode = "server4" if mode == "server4" else "api"
+        await settings_repo.set(f"fayda_mode_{bot_id}", mode)
+        return mode
     mode = "server4" if mode == "server4" else "api"
     await settings_repo.set("fayda_mode", mode)
     return mode
 
 
-async def get_provider():
-    mode = await active_mode()
+async def bot_mode_override(bot_id: int) -> str:
+    """The raw per-bot override: 'api' / 'server4' / '' (='global', follows the global)."""
+    try:
+        return (await settings_repo.get(f"fayda_mode_{bot_id}") or "").strip()
+    except Exception:
+        return ""
+
+
+async def get_provider(bot_id: int | None = None):
+    mode = await active_mode(bot_id)
     if mode not in _providers:
         _providers[mode] = _make(mode)
     return _providers[mode], mode

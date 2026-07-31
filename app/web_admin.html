@@ -205,6 +205,11 @@
       <span class="muted" style="margin-left:12px">DB:</span><span id="dbStat" class="tag">…</span>
       <select id="dbPolicy" onchange="saveSet({db_down_policy:this.value})"><option value="refuse">DB down: Refuse</option><option value="free">DB down: Serve free</option><option value="fallback">DB down: Fallback</option></select>
     </div>
+    <div class="row" style="margin-top:10px;align-items:flex-start">
+      <span class="muted" style="min-width:110px" title="Override the global download mode for a specific bot">Per-bot mode:</span>
+      <div id="botModes" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Each bot uses the global mode unless you override it here.</div>
     <div class="row" style="margin-top:12px">
       <span class="muted">Global price (Birr):</span><input class="sm" id="gprice" type="number" step="0.01" min="0" />
       <span class="muted" style="margin-left:12px">VIP price (Birr):</span><input class="sm" id="vprice" type="number" step="0.01" min="0" />
@@ -458,6 +463,15 @@ function renderCards(s){
 }
 function renderBilling(s){
   const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=s.mode==="server4"?"server4":"api";
+  const bm=$("#botModes");
+  if(bm&&Array.isArray(s.bots)){bm.innerHTML=s.bots.map(b=>{
+    const label=(b.username?("@"+b.username):("bot "+b.id))+(b.primary?' <span class="tag">primary</span>':"");
+    const opt=(v,t)=>`<option value="${v}"${(b.mode||"")===v?" selected":""}>${t}</option>`;
+    return `<span class="row" style="gap:6px"><span class="muted" style="min-width:210px">${label}</span>`+
+      `<select onchange='saveSet({bot_mode:{bot_id:${b.id},mode:this.value}})'>`+
+      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+
+      "</select></span>";
+  }).join("");}
   $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
   const setv=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||""};
   setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);setv("#s4src",s.s4_token_source||"pool");

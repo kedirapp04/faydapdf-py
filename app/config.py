@@ -47,6 +47,8 @@ def bot_id_of(token: str) -> int:
 # specific bot that user actually started.
 BOT_REGISTRY = {bot_id_of(t): t for t in BOT_TOKENS}
 BOT_TOKEN = BOT_TOKENS[0]  # primary (fallback for single-message sends)
+# bot_id -> @username, filled in at startup from get_me() (best-effort, for the admin UI).
+BOT_USERNAMES: dict[int, str] = {}
 
 # POLL_ONLY = comma of bot ids THIS process should long-poll (for per-process
 # scaling: run several copies, each polling a subset, all sharing the DB). Empty

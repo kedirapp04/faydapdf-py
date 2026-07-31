@@ -43,7 +43,9 @@ async def run_bot() -> None:
     for t in config.POLL_TOKENS:
         b = Bot(token=t)
         try:
-            await b.get_me()
+            me = await b.get_me()
+            if me and me.username:      # remember @username for the admin UI (per-bot mode)
+                config.BOT_USERNAMES[me.id] = me.username
         except Exception as e:
             log.error("Skipping a bot token (%s: %s) — check BOT_TOKENS.", type(e).__name__, e)
             try:

@@ -140,6 +140,12 @@ async def api_stats():
     from .services import payment_verify
     d = await _safe(stats_repo.dashboard(), {})
     d["mode"] = await fayda.active_mode()
+    d["bots"] = [
+        {"id": bid, "username": config.BOT_USERNAMES.get(bid, ""),
+         "primary": bid == config.bot_id_of(config.BOT_TOKEN),
+         "mode": await _safe(fayda.bot_mode_override(bid), "")}   # '' = follows global
+        for bid in config.BOT_REGISTRY
+    ]
     d["paused"] = await _safe(settings_repo.get_bool("paused", False), False)
     d["global_price_cents"] = await _safe(billing.global_price_cents(), 0)
     d["vip_price_cents"] = int(await _safe(settings_repo.get("vip_price_cents"), None) or 0)
@@ -631,6 +637,12 @@ async def api_settings(request: Request):
     body = await request.json()
     if "mode" in body:
         await fayda.set_mode(str(body["mode"]))
+    if "bot_mode" in body:   # per-bot download-mode override ({"bot_id":.., "mode":..})
+        bm = body["bot_mode"] or {}
+        try:
+            await fayda.set_mode(str(bm.get("mode") or "global"), int(bm.get("bot_id")))
+        except (TypeError, ValueError):
+            pass
     if "paused" in body:
         await settings_repo.set_bool("paused", bool(body["paused"]))
     if "global_price_birr" in body:

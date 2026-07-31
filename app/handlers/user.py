@@ -330,7 +330,7 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
             return await m.answer(i18n.t("gate_refused", reason=reason))
     wait = await m.answer(i18n.t("otp_requesting", fan=fan))   # show the full FAN/FIN
     fayda.set_vip_context(bool(u.get("is_vip")))   # Server-4: regular vs VIP token pool
-    provider, _mode = await fayda.get_provider()
+    provider, _mode = await fayda.get_provider(m.bot.id)   # per-bot download mode
     res = await provider.send_otp(fan)
     if not res.get("ok"):
         # It failed, so let the user retry the SAME id immediately (clear the guard).
@@ -361,7 +361,7 @@ async def on_otp(m: Message, state: FSMContext):
     queue = list(data.get("queue") or [])
     wait = await m.answer(i18n.t("verifying"))
     fayda.set_vip_context(bool(data.get("is_vip")))   # Server-4: regular vs VIP token pool
-    provider, _mode = await fayda.get_provider()
+    provider, _mode = await fayda.get_provider(m.bot.id)   # per-bot download mode
     res = await provider.verify_pdf(session, otp)
     if not res.get("ok"):
         await state.clear()

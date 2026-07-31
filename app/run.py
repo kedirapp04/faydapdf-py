@@ -58,11 +58,19 @@ async def _supervise(name: str, factory) -> None:
 async def main() -> None:
     await init_pool()
     log.info("DB pool ready. Web admin on %s:%s", config.WEB_HOST, config.WEB_PORT)
-    asyncio.create_task(health_loop())  # DB-down recovery monitor
-    asyncio.create_task(_supervise("bcast", worker_loop))  # broadcast delivery worker
     try:
-        # Neither supervisor returns; if one is cancelled (shutdown) the other is too.
-        await asyncio.gather(_supervise("bot", run_bot), _supervise("web", _run_web))
+        # ALL long-running loops are gathered here so their tasks stay strongly referenced
+        # for the whole process life. A bare asyncio.create_task() is NOT enough — the event
+        # loop keeps only WEAK references, so a fire-and-forget task can be garbage-collected
+        # mid-run. That silently killed the DB-recovery monitor once, leaving the DB stuck
+        # "down" for hours until a restart. Each loop is also supervised (auto-restart on
+        # crash). None of these returns; if one is cancelled (shutdown) they all are.
+        await asyncio.gather(
+            _supervise("bot", run_bot),
+            _supervise("web", _run_web),
+            _supervise("health", health_loop),   # DB-down recovery monitor
+            _supervise("bcast", worker_loop),     # broadcast delivery worker
+        )
     finally:
         await close_pool()
 

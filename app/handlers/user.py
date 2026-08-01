@@ -616,7 +616,9 @@ async def on_receipt(m: Message, state: FSMContext):
         await state.clear()
         if blk:
             return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
-        return await _ask_format(m, state, fans, dropped)
+        if len(fans) > 1:
+            await m.answer(i18n.t("n_ids", n=len(fans)))
+        return await _run_download(m, state, fans, "pdf", m.from_user.id)   # default PDF, no prompt
     blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments too
     if blk:
         await state.clear()
@@ -779,4 +781,8 @@ async def maybe_fan(m: Message, state: FSMContext):
     # Throttle rapid typed-FAN messages (double-taps / spam) — one every few seconds.
     if _should_skip(f"{m.from_user.id}:typed-fan", 4.0):
         return
-    await _ask_format(m, state, fans, dropped)
+    # Default output is PDF → go straight to OTP, no PDF/Screenshot prompt. Users who want
+    # a screenshot tap the "🖼 Get Screenshot" button first.
+    if len(fans) > 1:
+        await m.answer(i18n.t("n_ids", n=len(fans)))
+    await _run_download(m, state, fans, "pdf", m.from_user.id)

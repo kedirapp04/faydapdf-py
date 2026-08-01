@@ -22,6 +22,7 @@ _HELP_KEYS = {
     "help", "otp_send_fail", "receipt_wrong_account", "couldnt_read_txn",
     "payments_unavailable", "system_unavailable", "unavailable", "recovering_free",
     "forgot_err", "blocked", "paused", "already_submitted",
+    "addpay_full",   # show the support handle on the Add-Payment screen
 }
 
 

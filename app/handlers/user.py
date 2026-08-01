@@ -15,7 +15,7 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 
 from .. import config, fayda, i18n
-from ..db import pool, db_ready, db_down_policy, mark_db_down
+from ..db import pool, db_ready, db_down_policy, mark_db_down, recheck_if_down
 from ..repo import users as users_repo, settings as settings_repo, payments as payments_repo
 from ..services import billing, payment_verify, maintenance
 from . import keyboards as kb
@@ -691,7 +691,7 @@ async def _ask_format(m: Message, state: FSMContext, fans: list[str], dropped: i
 
 async def _run_download(m: Message, state: FSMContext, fans: list[str], delivery: str, uid) -> None:
     """Gate (DB / blocked / paused) then start the queue with the chosen format."""
-    if not db_ready():
+    if not await recheck_if_down():   # self-heals a stuck 'down' if the DB is actually reachable
         if db_down_policy() == "refuse" and not config.is_admin(uid):
             return await m.answer(i18n.t("system_unavailable"))
         await m.answer(i18n.t("recovering_free"))

@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import pathlib
+import time
 
 import asyncpg
 
@@ -95,6 +96,32 @@ def mark_db_down() -> None:
     if _db_ready:
         _db_ready = False
         log.warning("DB marked DOWN (caught query error)")
+
+
+_recheck_at = 0.0
+
+
+async def recheck_if_down() -> bool:
+    """Like db_ready(), but if the DB is marked DOWN it opportunistically RE-PROBES here
+    (throttled to every few seconds) and flips back to ready on success — so recovery is
+    driven by real user activity too, not only the background health_loop. This makes the
+    'temporarily unavailable' state self-heal even if the monitor ever stalls."""
+    global _db_ready, _recheck_at
+    if _db_ready:
+        return True
+    now = time.monotonic()
+    if now - _recheck_at < 3:
+        return False
+    _recheck_at = now
+    if await _probe(timeout=8):
+        _db_ready = True
+        log.warning("DB recovered (on-demand recheck)")
+        try:
+            await asyncio.wait_for(_pool.expire_connections(), timeout=10)
+        except Exception:
+            pass
+        return True
+    return False
 
 
 def db_down_policy() -> str:
@@ -180,7 +207,13 @@ async def health_loop(interval: float = 10.0) -> None:
                     await asyncio.wait_for(_pool.expire_connections(), timeout=10)
                 except Exception:
                     log.exception("expire_connections after recovery failed")
-                await _load_policy()
+                try:
+                    # MUST be timeout-bounded: a pool query here (over just-recovered, maybe
+                    # still-flaky connections) could otherwise hang and freeze the whole
+                    # monitor — which is exactly what left the DB stuck 'down' for ages.
+                    await asyncio.wait_for(_load_policy(), timeout=10)
+                except Exception:
+                    pass
             elif not ok and _db_ready:
                 _db_ready = False
                 log.warning("DB DOWN (health probe failed)")

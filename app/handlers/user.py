@@ -606,10 +606,19 @@ async def _submit_receipt_text(m: Message, text: str) -> bool:
 
 @router.message(Flow.receipt, F.text)
 async def on_receipt(m: Message, state: FSMContext):
-    # If the user pastes a FIN/FAN while in the Add-Payment step, they meant to DOWNLOAD —
-    # switch to the download flow instead of asking for a transaction number. A receipt
-    # reference always contains a letter, so a bare 12–16-digit number is unambiguously an
-    # ID, never a Telebirr/CBE code.
+    blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments too
+    if blk:
+        await state.clear()
+        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
+    if not db_ready():   # payments need the DB — can't record money while it's down
+        await state.clear()
+        return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
+    # RECEIPT FIRST — this is the Add-Payment step, and a Telebirr SMS embeds the payer's
+    # phone in international format (251XXXXXXXXX = 12 digits) which would otherwise be
+    # mistaken for a 12-digit FIN and start a download instead of crediting the payment.
+    if await _submit_receipt_text(m, m.text):
+        return await state.clear()
+    # Not a receipt: a pasted FIN/FAN means they meant to DOWNLOAD → switch flows.
     fans, dropped = _parse_fans(m.text)
     if fans:
         blk = await _maint_block_download(m.from_user.id)
@@ -619,17 +628,8 @@ async def on_receipt(m: Message, state: FSMContext):
         if len(fans) > 1:
             await m.answer(i18n.t("n_ids", n=len(fans)))
         return await _run_download(m, state, fans, "pdf", m.from_user.id)   # default PDF, no prompt
-    blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments too
-    if blk:
-        await state.clear()
-        return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
-    if not db_ready():   # payments need the DB — can't record money while it's down
-        await state.clear()
-        return await m.answer(i18n.t("payments_unavailable"), reply_markup=kb.main_kb(m.from_user.id))
-    if await _submit_receipt_text(m, m.text):
-        await state.clear()
-    else:   # nothing readable — stay in the step so they can try again
-        await m.answer(i18n.t("send_txn_short"), reply_markup=kb.cancel_kb())
+    # Nothing readable — stay in the step so they can try again.
+    await m.answer(i18n.t("send_txn_short"), reply_markup=kb.cancel_kb())
 
 
 # ── add-balance via a Telebirr screenshot (OCR → look-alike correction → verify) ─
@@ -758,7 +758,11 @@ async def maybe_fan(m: Message, state: FSMContext):
     fans, dropped = _parse_fans(m.text)
     # Auto-detect a payment receipt (Telebirr link / receipt number / 127 SMS) pasted
     # at any time — no need to tap Add Payment first (mirrors faydapdf-railway).
-    if not fans and db_ready() and _looks_like_receipt(m.text):
+    # Receipt detection runs FIRST, even when digits look like an ID: a Telebirr SMS embeds
+    # the payer's phone in international format (251XXXXXXXXX = 12 digits), which would
+    # otherwise be mistaken for a 12-digit FIN and start a download instead of crediting the
+    # payment. Safe both ways — a bare FIN/FAN is only digits, so it never looks like a receipt.
+    if db_ready() and _looks_like_receipt(m.text):
         blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments
         if blk:
             return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))

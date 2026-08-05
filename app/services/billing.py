@@ -109,6 +109,13 @@ async def free_mode() -> bool:
     return await settings_repo.get_bool("free_mode", False)
 
 
+async def new_price_cents() -> int:
+    """Price for the NEW wallet (money topped up after the price change). Unset → same as
+    the old price, so behaviour is unchanged until an admin sets it."""
+    v = await settings_repo.get("new_price_cents")
+    return int(v) if v is not None else await global_price_cents()
+
+
 async def price_for(user: dict) -> int:
     if await free_mode():
         return 0
@@ -118,7 +125,15 @@ async def price_for(user: dict) -> int:
             return int(vip)
     if user.get("price_override_cents") is not None:
         return int(user["price_override_cents"])
-    return await global_price_cents()
+    # Two-tier global price. Money the user had already topped up (`balance_cents`) is
+    # charged at the OLD price until it can no longer cover a download; after that — and
+    # for every new top-up (`balance_new_cents`) — the NEW price applies.
+    old = await global_price_cents()
+    new = await new_price_cents()
+    if new == old:
+        return old
+    bal = int(user.get("balance_cents") or 0)
+    return old if (bal > 0 and bal >= old) else new
 
 
 async def today_count(user_id: int) -> int:
@@ -132,11 +147,12 @@ async def can_download(user: dict) -> tuple[bool, str, int]:
     price = await price_for(user)
     mode = user["billing_mode"]
     bonus = user.get("bonus_balance_cents", 0)   # spendable bonus wallet (0 for legacy users)
+    funds = bonus + user["balance_cents"] + user.get("balance_new_cents", 0)   # both price tiers
     if mode == "prepaid":
-        if bonus + user["balance_cents"] < price:
-            return False, i18n.t("reason_insufficient", need=birr(price), have=birr(bonus + user["balance_cents"])), price
+        if funds < price:
+            return False, i18n.t("reason_insufficient", need=birr(price), have=birr(funds)), price
     elif mode == "postpaid":
-        purchasing_power = bonus + user["balance_cents"] + user["credit_limit_cents"] - user["owed_cents"]
+        purchasing_power = funds + user["credit_limit_cents"] - user["owed_cents"]
         if purchasing_power < price:
             return False, i18n.t("reason_postpaid_limit", need=birr(price)), price
     else:  # counter
@@ -163,7 +179,8 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
             # Acquire the exclusive row lock FIRST (before any other statement) so every
             # concurrent charge for this user takes the same lock in the same order.
             urow = await conn.fetchrow(
-                "SELECT balance_cents, bonus_balance_cents, owed_cents FROM users WHERE telegram_id=$1 FOR UPDATE",
+                "SELECT balance_cents, balance_new_cents, bonus_balance_cents, owed_cents "
+                "FROM users WHERE telegram_id=$1 FOR UPDATE",
                 user_id,
             )
             dl_id = await conn.fetchval(
@@ -171,20 +188,26 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
                 user_id, fan_hash, fmt, price_cents,
             )
             charged = from_bonus = 0
-            balance = owed = bonus_balance = None
+            balance = owed = bonus_balance = balance_new = None
             if price_cents > 0 and mode in ("prepaid", "postpaid") and urow:
-                bal, bonus, owed = urow["balance_cents"], urow["bonus_balance_cents"], urow["owed_cents"]
-                from_bonus = min(bonus, price_cents)                    # bonus wallet first
+                bal, bal_new = urow["balance_cents"], urow["balance_new_cents"]
+                bonus, owed = urow["bonus_balance_cents"], urow["owed_cents"]
+                # Spend order: bonus (free) → OLD-price wallet → NEW-price wallet → owed.
+                # Draining the old wallet first is what retires the old price naturally.
+                from_bonus = min(bonus, price_cents)
                 remaining = price_cents - from_bonus
                 from_balance = min(bal, remaining) if remaining > 0 else 0
-                shortfall = remaining - from_balance                    # → owed (postpaid / over-spend)
+                remaining -= from_balance
+                from_new = min(bal_new, remaining) if remaining > 0 else 0
+                shortfall = remaining - from_new                        # → owed (postpaid / over-spend)
                 bonus_balance = bonus - from_bonus
                 balance = bal - from_balance
+                balance_new = bal_new - from_new
                 owed = owed + shortfall
                 await conn.execute(
-                    "UPDATE users SET bonus_balance_cents=$1, balance_cents=$2, owed_cents=$3, updated_at=now() "
-                    "WHERE telegram_id=$4",
-                    bonus_balance, balance, owed, user_id,
+                    "UPDATE users SET bonus_balance_cents=$1, balance_cents=$2, balance_new_cents=$3, "
+                    "owed_cents=$4, updated_at=now() WHERE telegram_id=$5",
+                    bonus_balance, balance, balance_new, owed, user_id,
                 )
                 # audit rows (balance_after = final main balance keeps the ledger invariant)
                 if from_bonus > 0:
@@ -195,7 +218,12 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
                     await conn.execute(
                         "INSERT INTO wallet_ledger (user_id, kind, amount_cents, balance_after_cents, reason, ref_type, ref_id) "
                         "VALUES ($1,'debit',$2,$3,'download','download',$4)", user_id, from_balance, balance, dl_id)
-                charged = price_cents   # what the download cost (bonus + balance + any booked debt)
+                if from_new > 0:
+                    await conn.execute(
+                        "INSERT INTO wallet_ledger (user_id, kind, amount_cents, balance_after_cents, reason, ref_type, ref_id) "
+                        "VALUES ($1,'debit',$2,$3,'download_new','download',$4)", user_id, from_new, balance, dl_id)
+                charged = price_cents   # what the download cost (bonus + both wallets + any booked debt)
             # counter: no money movement
             return {"mode": mode, "charged": charged, "from_bonus": from_bonus,
-                    "balance": balance, "bonus_balance": bonus_balance, "owed": owed}
+                    "balance": balance, "balance_new": balance_new,
+                    "bonus_balance": bonus_balance, "owed": owed}

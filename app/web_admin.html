@@ -211,10 +211,12 @@
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px">Each bot uses the global mode unless you override it here.</div>
     <div class="row" style="margin-top:12px">
-      <span class="muted">Global price (Birr):</span><input class="sm" id="gprice" type="number" step="0.01" min="0" />
+      <span class="muted" title="Charged while a user still has money they topped up BEFORE the price change">Old price (Birr):</span><input class="sm" id="gprice" type="number" step="0.01" min="0" placeholder="10" />
+      <span class="muted" style="margin-left:12px" title="Charged on every NEW top-up from now on">New price (Birr):</span><input class="sm" id="nprice" type="number" step="0.01" min="0" placeholder="15" />
       <span class="muted" style="margin-left:12px">VIP price (Birr):</span><input class="sm" id="vprice" type="number" step="0.01" min="0" />
       <button class="btn" onclick="savePrices()">Save prices</button>
     </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Balance a user topped up <b>before</b> the change keeps costing the <b>old price</b> until it's spent; every <b>new</b> top-up is charged at the <b>new price</b>. Set them equal to disable two-tier pricing.</div>
     <div class="row" style="margin-top:12px">
       <span class="muted">🎁 Welcome bonus (Birr):</span><input class="sm" id="welcomeBonus" type="number" step="0.01" min="0" title="Granted to NEW users into their bonus wallet"/>
       <button class="btn sec" onclick="saveWelcomeBonus()">Save</button>
@@ -478,8 +480,9 @@ function renderBilling(s){
   {const cb=$("#s4spoof");if(cb)cb.checked=s.s4_ip_spoof!==false;}
   {const m=$("#bcViaMain");if(m)m.checked=!!s.broadcast_via_main;}
   setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);
-  const g=$("#gprice"),v=$("#vprice");
+  const g=$("#gprice"),v=$("#vprice"),np=$("#nprice");
   if(document.activeElement!==g)g.value=(Number(s.global_price_cents||0)/100);
+  if(np&&document.activeElement!==np)np.value=(Number(s.new_price_cents||0)/100);
   if(document.activeElement!==v)v.value=(Number(s.vip_price_cents||0)/100);
   const db=$("#dbStat");db.textContent=s.db_ready?"✅ up":"⚠️ DOWN";db.className="tag "+(s.db_ready?"ok":"bad");
   if(document.activeElement!==$("#dbPolicy")&&s.db_down_policy)$("#dbPolicy").value=s.db_down_policy;
@@ -501,7 +504,7 @@ function renderBilling(s){
 async function togglePause(){const s=await api("/api/stats");await saveSet({paused:!s.paused})}
 async function saveServer4(){await saveSet({s4_csrf_regular:$("#s4reg").value,s4_csrf_vip:$("#s4vip").value,s4_appcheck:$("#s4app").value,s4_token_source:$("#s4src").value,s4_ip_spoof:$("#s4spoof").checked})}
 async function saveSet(o){await api("/api/settings",{method:"POST",body:JSON.stringify(o)});toast("Saved");refresh()}
-async function savePrices(){await saveSet({global_price_birr:$("#gprice").value,vip_price_birr:$("#vprice").value})}
+async function savePrices(){await saveSet({global_price_birr:$("#gprice").value,new_price_birr:$("#nprice").value,vip_price_birr:$("#vprice").value})}
 async function saveAccounts(){
   const primary={name:$("#tb_name").value.trim(),account:$("#tb_acct").value.trim(),show:true,verify:true};
   const extra=$("#tbList").value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{

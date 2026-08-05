@@ -68,6 +68,65 @@ async def debit(conn, user_id: int, amount_cents: int, reason: str,
     return await _apply(conn, user_id, "debit", amount_cents, reason, ref_type, ref_id)
 
 
+# ── new-price wallet (two-tier pricing) ──────────────────────────────────────
+# `balance_cents` holds money topped up BEFORE the price change (charged at the OLD
+# price); this wallet holds every NEW top-up (charged at the NEW price). Debt is still
+# paid off first, so a top-up never leaves the user owing while holding credit.
+async def credit_new(conn, user_id: int, amount_cents: int, reason: str,
+                     ref_type: str | None = None, ref_id: int | None = None) -> int:
+    """Credit the NEW-price wallet. Returns the new balance_new_cents."""
+    if amount_cents < 0:
+        raise ValueError("amount must be positive")
+    row = await conn.fetchrow(
+        "SELECT balance_cents, balance_new_cents, owed_cents FROM users WHERE telegram_id=$1 FOR UPDATE",
+        user_id)
+    if row is None:
+        raise ValueError(f"user {user_id} not found")
+    owed = row["owed_cents"]
+    pay_debt = min(owed, amount_cents)
+    new_owed = owed - pay_debt
+    new_new = row["balance_new_cents"] + (amount_cents - pay_debt)
+    await conn.execute(
+        "UPDATE users SET balance_new_cents=$1, owed_cents=$2, updated_at=now() WHERE telegram_id=$3",
+        new_new, new_owed, user_id)
+    # balance_after records the (unchanged) OLD-wallet balance so the ledger invariant
+    # "cached balance_cents == last ledger balance_after" still holds.
+    await conn.execute(
+        """INSERT INTO wallet_ledger
+             (user_id, kind, amount_cents, balance_after_cents, reason, ref_type, ref_id)
+           VALUES ($1,'credit',$2,$3,$4,$5,$6)""",
+        user_id, amount_cents, row["balance_cents"], reason, ref_type, ref_id)
+    return new_new
+
+
+async def debit_any(conn, user_id: int, amount_cents: int, reason: str,
+                    ref_type: str | None = None, ref_id: int | None = None) -> tuple:
+    """Admin deduct across BOTH money wallets — newest money first (a deduct usually
+    reverses a recent top-up, which landed in the new wallet), then the old wallet. Never
+    goes negative. Returns (taken, balance_cents, balance_new_cents)."""
+    if amount_cents <= 0:
+        return 0, 0, 0
+    row = await conn.fetchrow(
+        "SELECT balance_cents, balance_new_cents FROM users WHERE telegram_id=$1 FOR UPDATE", user_id)
+    if row is None:
+        raise ValueError(f"user {user_id} not found")
+    take_new = min(row["balance_new_cents"], amount_cents)
+    take_old = min(row["balance_cents"], amount_cents - take_new)
+    taken = take_new + take_old
+    if taken <= 0:
+        return 0, row["balance_cents"], row["balance_new_cents"]
+    new_old, new_new = row["balance_cents"] - take_old, row["balance_new_cents"] - take_new
+    await conn.execute(
+        "UPDATE users SET balance_cents=$1, balance_new_cents=$2, updated_at=now() WHERE telegram_id=$3",
+        new_old, new_new, user_id)
+    await conn.execute(
+        """INSERT INTO wallet_ledger
+             (user_id, kind, amount_cents, balance_after_cents, reason, ref_type, ref_id)
+           VALUES ($1,'debit',$2,$3,$4,$5,$6)""",
+        user_id, taken, new_old, reason, ref_type, ref_id)
+    return taken, new_old, new_new
+
+
 # ── separate bonus wallet (bonus_balance_cents) ──────────────────────────────
 # The bonus wallet is spendable money kept OUT of the normal balance. Granting a
 # bonus adds here (and to the lifetime bonus_cents record); a download spends here

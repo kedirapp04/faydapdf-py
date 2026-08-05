@@ -287,8 +287,8 @@ async def _show_wallet(m: Message):
     mode = u["billing_mode"]
     lines = [i18n.t("wallet_header", mode=mode)]
     if mode in ("prepaid", "postpaid"):
-        # single net figure: normal balance minus any owed debt
-        net = u["balance_cents"] - u["owed_cents"]
+        # single net figure: BOTH money wallets (old-price + new-price) minus any owed debt
+        net = u["balance_cents"] + u.get("balance_new_cents", 0) - u["owed_cents"]
         lines.append(i18n.t("wallet_balance", balance=billing.birr(net)))
     if u.get("bonus_balance_cents", 0) > 0 and mode in ("prepaid", "postpaid"):
         lines.append(i18n.t("wallet_bonus", bonus=billing.birr(u["bonus_balance_cents"])))

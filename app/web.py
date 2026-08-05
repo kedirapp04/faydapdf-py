@@ -81,7 +81,8 @@ def _user_dto(u: dict) -> dict:
         "username": u["username"],
         "status": u["status"],
         "billing_mode": u["billing_mode"],
-        "balance_cents": u["balance_cents"],
+        "balance_cents": u["balance_cents"],                  # OLD-price wallet
+        "balance_new_cents": u.get("balance_new_cents", 0),   # NEW-price wallet
         "bonus_cents": u.get("bonus_cents", 0),               # lifetime granted (record)
         "bonus_balance_cents": u.get("bonus_balance_cents", 0),  # current spendable bonus wallet
         "owed_cents": u["owed_cents"],
@@ -147,7 +148,8 @@ async def api_stats():
         for bid in config.BOT_REGISTRY
     ]
     d["paused"] = await _safe(settings_repo.get_bool("paused", False), False)
-    d["global_price_cents"] = await _safe(billing.global_price_cents(), 0)
+    d["global_price_cents"] = await _safe(billing.global_price_cents(), 0)      # OLD price (existing balance)
+    d["new_price_cents"] = await _safe(billing.new_price_cents(), 0)           # NEW price (new top-ups)
     d["vip_price_cents"] = int(await _safe(settings_repo.get("vip_price_cents"), None) or 0)
     d["accounts"] = await _safe(_accounts_dto(), {})
     d["db_ready"] = db_ready()
@@ -228,7 +230,7 @@ async def api_user_action(uid: int, request: Request):
             raise HTTPException(400, "amount must be positive")
         async with pool().acquire() as conn:
             async with conn.transaction():
-                nb = await wallet.credit(conn, uid, cents, "adjust", ref_type="admin", ref_id=0)
+                nb = await wallet.credit_new(conn, uid, cents, "adjust", ref_type="admin", ref_id=0)
         await _notify(uid, i18n.t("credited_notify", amount=billing.birr(cents), balance=billing.birr(nb)))
     elif action == "deduct":
         cents = _cents(body.get("value")) or 0
@@ -236,10 +238,8 @@ async def api_user_action(uid: int, request: Request):
             raise HTTPException(400, "amount must be positive")
         async with pool().acquire() as conn:
             async with conn.transaction():
-                row = await conn.fetchrow("SELECT balance_cents FROM users WHERE telegram_id=$1 FOR UPDATE", uid)
-                take = min(row["balance_cents"], cents)   # never below zero
-                if take > 0:
-                    await wallet.debit(conn, uid, take, "adjust", ref_type="admin", ref_id=0)
+                # Spans BOTH money wallets (new-price money first), never below zero.
+                await wallet.debit_any(conn, uid, cents, "adjust", ref_type="admin", ref_id=0)
     elif action == "bonus":
         cents = _cents(body.get("value")) or 0
         if cents <= 0:
@@ -327,7 +327,7 @@ async def api_tracked():
         SELECT (SELECT COALESCE(sum(amount_cents),0)::bigint FROM payments WHERE status='approved') AS approved,
                (SELECT COALESCE(sum(bonus_cents),0)::bigint FROM users)          AS bonuses,
                (SELECT COALESCE(sum(bonus_balance_cents),0)::bigint FROM users)  AS bonus_wallet,
-               (SELECT COALESCE(sum(balance_cents),0)::bigint FROM users)        AS balances,
+               (SELECT COALESCE(sum(balance_cents+balance_new_cents),0)::bigint FROM users) AS balances,
                (SELECT COALESCE(sum(owed_cents),0)::bigint FROM users)           AS owed
     """), None)
     approved = row["approved"] if row else 0
@@ -647,6 +647,8 @@ async def api_settings(request: Request):
         await settings_repo.set_bool("paused", bool(body["paused"]))
     if "global_price_birr" in body:
         await settings_repo.set("global_price_cents", str(_cents(body["global_price_birr"]) or 0))
+    if "new_price_birr" in body:
+        await settings_repo.set("new_price_cents", str(_cents(body["new_price_birr"]) or 0))
     if "vip_price_birr" in body:
         await settings_repo.set("vip_price_cents", str(_cents(body["vip_price_birr"]) or 0))
     if "db_down_policy" in body:

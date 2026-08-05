@@ -39,6 +39,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_pdf BOOLEAN NOT NULL DEFAULT TR
 ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_screenshot BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_cents BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_balance_cents BIGINT NOT NULL DEFAULT 0;  -- separate spendable bonus wallet (0 for pre-existing users = no change)
+-- Second money wallet for the two-tier price. `balance_cents` keeps whatever users had
+-- already topped up and is charged at the OLD price; every NEW top-up lands here and is
+-- charged at the NEW price. 0 for everyone at migration = existing balances are untouched.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS balance_new_cents BIGINT NOT NULL DEFAULT 0;
 
 -- Payment receipts. UNIQUE(receipt_id) is the idempotency guard: a given bank
 -- transaction can be recorded ONCE, so it can never double-credit.

@@ -503,13 +503,11 @@ async def recharge_cmd(m: Message):
     async with pool().acquire() as conn:
         async with conn.transaction():
             if cents > 0:
-                nb = await wallet.credit(conn, int(target), cents, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
-            else:
-                row = await conn.fetchrow("SELECT balance_cents FROM users WHERE telegram_id=$1 FOR UPDATE", int(target))
-                take = min(row["balance_cents"], -cents)
-                nb = row["balance_cents"]
-                if take > 0:
-                    nb = await wallet.debit(conn, int(target), take, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
+                nb = await wallet.credit_new(conn, int(target), cents, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
+            else:   # deduct across BOTH money wallets (new-price money first)
+                _taken, old_b, new_b = await wallet.debit_any(
+                    conn, int(target), -cents, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
+                nb = old_b + new_b
     await m.answer(f"{'💵 Credited' if cents>0 else '➖ Deducted'} {billing.birr(abs(cents))} · {target} balance: {billing.birr(nb)}")
 
 
@@ -616,7 +614,7 @@ async def topup_cmd(m: Message):
     await users_repo.ensure(target)
     async with pool().acquire() as conn:
         async with conn.transaction():
-            new_balance = await wallet.credit(conn, int(target), cents, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
+            new_balance = await wallet.credit_new(conn, int(target), cents, "adjust", ref_type="admin", ref_id=int(m.from_user.id))
     await m.answer(f"💵 Credited {billing.birr(cents)} to {target}. New balance: {billing.birr(new_balance)}.")
     await notify.notify_user(target, i18n.t("credited_notify", amount=billing.birr(cents), balance=billing.birr(new_balance)))
 

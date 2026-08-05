@@ -73,7 +73,9 @@ async def approve(payment_id: int, admin_id, amount_cents: int | None = None,
             if res.endswith(" 0"):
                 return {"ok": False, "error": "race"}
 
-            new_balance = await wallet.credit(
+            # Every NEW top-up lands in the NEW-price wallet; the pre-existing balance_cents
+            # keeps its OLD price until it's spent (two-tier pricing).
+            new_balance = await wallet.credit_new(
                 conn, pay["user_id"], int(amount), "topup", ref_type="payment", ref_id=int(payment_id)
             )
             # Tiered top-up bonus (admin-editable) → bonus wallet, in the SAME transaction

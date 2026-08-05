@@ -437,7 +437,7 @@ function histHtml(h){
       ${u.tag?`<span class="tag">🏷 ${esc(u.tag)}</span>`:''}${u.role?`<span class="tag">${esc(u.role)}</span>`:''}
     </div>
     <div class="cards">
-      <div class="card"><div class="k">Balance</div><div class="v" style="font-size:16px">${birr((u.balance_cents||0)+(u.balance_new_cents||0))}</div><div class="muted" style="font-size:10px">${(u.balance_cents||0)?`${birr(u.balance_cents)} old-price`:""}${(u.balance_cents||0)&&(u.balance_new_cents||0)?" · ":""}${(u.balance_new_cents||0)?`${birr(u.balance_new_cents)} new-price`:""}</div></div>
+      <div class="card"><div class="k">Balance (total)</div><div class="v" style="font-size:16px">${birr((u.balance_cents||0)+(u.balance_new_cents||0))}</div><div class="muted" style="font-size:10px">🕘 ${birr(u.balance_cents||0)} old · 🆕 ${birr(u.balance_new_cents||0)} new</div></div>
       <div class="card"><div class="k">Bonus wallet</div><div class="v" style="font-size:16px">${birr(u.bonus_balance_cents)}</div><div class="muted" style="font-size:10px">${birr(u.bonus_cents)} total bonus</div></div>
       <div class="card"><div class="k">Owed</div><div class="v" style="font-size:16px">${birr(u.owed_cents)}</div></div>
       <div class="card"><div class="k">Downloads</div><div class="v" style="font-size:16px">${h.downloads.total}<span class="muted" style="font-size:11px"> · ${h.downloads.today} today</span></div></div>
@@ -534,7 +534,7 @@ function userRow(u){
   const tagChip=u.tag?` <span class="tag">🏷 ${esc(u.tag)}</span>`:"";
   const price=u.price_override_cents!=null?birr(u.price_override_cents)+" *":"global";
   return `<tr><td>${who(id,u.username)}<div class="muted" style="font-size:11px">#${id}</div></td>
-    <td>${st}${vip}${tagChip}</td><td>${u.billing_mode}</td><td class="baltxt" title="old-price ${birr(u.balance_cents)} · new-price ${birr(u.balance_new_cents||0)}">${birr((u.balance_cents||0)+(u.balance_new_cents||0))}</td><td>${price}</td>
+    <td>${st}${vip}${tagChip}</td><td>${u.billing_mode}</td><td class="baltxt">${birr((u.balance_cents||0)+(u.balance_new_cents||0))}<div class="muted" style="font-size:10px">${birr(u.balance_cents||0)} old · ${birr(u.balance_new_cents||0)} new</div></td><td>${price}</td>
     <td>${u.downloads_count||0}</td>
     <td><button class="btn sec sm" onclick="openManage(${id})">⚙ Manage</button></td></tr>`;
 }

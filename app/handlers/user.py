@@ -189,7 +189,7 @@ async def start(m: Message, state: FSMContext):
     # Price-per-download shown on start; reads the (cached) live price, so it always
     # reflects the admin's current setting / free mode.
     try:
-        price = 0 if await billing.free_mode() else await billing.global_price_cents()
+        price = 0 if await billing.free_mode() else await billing.new_price_cents()
         price_line = i18n.t("price_free") if price <= 0 else i18n.t("price_per_pdf", price=billing.birr(price))
     except Exception:
         price_line = ""
@@ -292,7 +292,7 @@ async def _show_wallet(m: Message):
         lines.append(i18n.t("wallet_balance", balance=billing.birr(net)))
     if u.get("bonus_balance_cents", 0) > 0 and mode in ("prepaid", "postpaid"):
         lines.append(i18n.t("wallet_bonus", bonus=billing.birr(u["bonus_balance_cents"])))
-    price = await billing.price_for(u)
+    price = await billing.display_price_for(u)   # advertised (new) price; old balance is charged less
     lines.append(i18n.t("wallet_price", price=billing.birr(price)))
     await m.answer("\n".join(lines), reply_markup=kb.main_kb(m.from_user.id))
 

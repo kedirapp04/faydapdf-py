@@ -125,15 +125,30 @@ async def price_for(user: dict) -> int:
             return int(vip)
     if user.get("price_override_cents") is not None:
         return int(user["price_override_cents"])
-    # Two-tier global price. Money the user had already topped up (`balance_cents`) is
-    # charged at the OLD price until it can no longer cover a download; after that — and
-    # for every new top-up (`balance_new_cents`) — the NEW price applies.
+    # Two-tier global price. While ANY old-wallet money is left the download is charged at
+    # the OLD price — even if that balance can't cover it alone, in which case the rest is
+    # topped up from the new wallet (still at the old price). Only once the old wallet hits
+    # zero does the NEW price apply.
     old = await global_price_cents()
     new = await new_price_cents()
     if new == old:
         return old
-    bal = int(user.get("balance_cents") or 0)
-    return old if (bal > 0 and bal >= old) else new
+    return old if int(user.get("balance_cents") or 0) > 0 else new
+
+
+async def display_price_for(user: dict) -> int:
+    """The price to SHOW a user — their personal price if they have one (free mode / VIP /
+    per-user override), otherwise the NEW (list) price. Someone still holding old-wallet
+    balance is charged the OLD price, i.e. they simply pay less than advertised."""
+    if await free_mode():
+        return 0
+    if user.get("is_vip"):
+        vip = await settings_repo.get(VIP_DISCOUNT_KEY)
+        if vip is not None:
+            return int(vip)
+    if user.get("price_override_cents") is not None:
+        return int(user["price_override_cents"])
+    return await new_price_cents()
 
 
 async def today_count(user_id: int) -> int:

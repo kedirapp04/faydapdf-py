@@ -498,7 +498,11 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
         payment, created = await payments_repo.submit(
             m.from_user.id, v.get("receipt_id") or receipt_id, v.get("bank", "telebirr"),
             int(v["amount_cents"]), v.get("provider", "auto"))
-        if not created:
+        # A receipt that verifies is credited even if the row already exists and is still
+        # PENDING (user re-sent it while waiting for an admin) — approve() only ever touches
+        # a row that is still 'pending' (guarded UPDATE), and receipt_id is UNIQUE, so a
+        # payment can be credited exactly ONCE no matter how many times it is re-sent.
+        if not created and payment["status"] != "pending":
             return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
         res = await payments_repo.approve(payment["id"], f"auto:{v.get('provider')}", int(v["amount_cents"]))
         if res.get("ok"):
@@ -506,6 +510,9 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
                 await m.answer(i18n.t("bonus_notify", amount=billing.birr(res["bonus_cents"]),
                                       bonus=billing.birr(res["bonus_balance_cents"])))
             return await wait.edit_text(i18n.t("verified_added", amount=billing.birr(res["amount_cents"]), balance=billing.birr(res["balance_cents"])))
+        if not created:   # someone/something else decided it first — report that, don't retry
+            fresh = await payments_repo.get(payment["id"]) or payment
+            return await wait.edit_text(i18n.t("already_submitted", status=fresh["status"]))
 
     bank = v.get("bank") or payment_verify.detect_bank(receipt_id)
 

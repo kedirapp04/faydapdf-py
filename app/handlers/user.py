@@ -357,6 +357,19 @@ async def on_otp(m: Message, state: FSMContext):
         # A new FIN/FAN while we're waiting for the OTP means "forget that one, do this one
         # instead" — abandon the pending session and start a fresh download. Unambiguous: an
         # OTP is 4-10 digits and a FIN/FAN is 12-16, so the two can never collide.
+        # RECEIPT FIRST (same rule as the other entry points): a Telebirr SMS embeds the
+        # payer's phone as 251XXXXXXXXX = 12 digits, which would otherwise look like a FIN
+        # and cancel the download. Credit it and STAY in the OTP step so the pending
+        # download can still be finished. (A receipt PHOTO is handled in any state already.)
+        if db_ready() and _looks_like_receipt(m.text):
+            try:
+                await users_repo.ensure(m.from_user.id, m.from_user.username)
+            except Exception:
+                mark_db_down()
+            else:
+                if await _submit_receipt_text(m, m.text):
+                    return await m.answer(i18n.t("otp_enter_numeric"))   # nudge: OTP still pending
+        # A new FIN/FAN means "forget that one, do this one instead".
         fans, _dropped = _parse_fans(m.text)
         if fans:
             delivery = (await state.get_data()).get("delivery") or "pdf"   # keep PDF/screenshot

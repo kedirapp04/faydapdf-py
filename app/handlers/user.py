@@ -24,7 +24,7 @@ router = Router()
 log = logging.getLogger("faydapdf-py.user")
 
 FAN_RE = re.compile(r"^\d{12,16}$")
-OTP_RE = re.compile(r"^\d{4,10}$")
+OTP_RE = re.compile(r"^\d{6}$")   # Fayda OTPs are exactly 6 digits (a 10-digit phone is NOT one)
 PHONE_RE = re.compile(r"^(?:\+?251|0)?9\d{8}$")
 _PHONE_ANY = re.compile(r"(?:\+?251|0)?(9\d{8})")
 
@@ -354,6 +354,16 @@ async def on_otp(m: Message, state: FSMContext):
         return await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
     otp = m.text.replace(" ", "")
     if not OTP_RE.match(otp):
+        # A new FIN/FAN while we're waiting for the OTP means "forget that one, do this one
+        # instead" — abandon the pending session and start a fresh download. Unambiguous: an
+        # OTP is 4-10 digits and a FIN/FAN is 12-16, so the two can never collide.
+        fans, _dropped = _parse_fans(m.text)
+        if fans:
+            delivery = (await state.get_data()).get("delivery") or "pdf"   # keep PDF/screenshot
+            await state.clear()
+            if len(fans) > 1:
+                await m.answer(i18n.t("n_ids", n=len(fans)))
+            return await _run_download(m, state, fans, delivery, m.from_user.id)
         return await m.answer(i18n.t("otp_enter_numeric"))
     data = await state.get_data()
     session, price_cents, mode, fan_hash = data.get("session"), data.get("price_cents", 0), data.get("mode"), data.get("fan_hash")

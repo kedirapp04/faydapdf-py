@@ -12,7 +12,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, InputMediaPhoto
 
 from .. import config, fayda, i18n
 from ..db import pool, db_ready, db_down_policy, mark_db_down, recheck_if_down
@@ -286,12 +286,15 @@ async def _show_wallet(m: Message):
         u = await users_repo.ensure(m.from_user.id, m.from_user.username)
     mode = u["billing_mode"]
     lines = [i18n.t("wallet_header", mode=mode)]
-    if mode in ("prepaid", "postpaid"):
-        # single net figure: BOTH money wallets (old-price + new-price) minus any owed debt
-        net = u["balance_cents"] + u.get("balance_new_cents", 0) - u["owed_cents"]
-        lines.append(i18n.t("wallet_balance", balance=billing.birr(net)))
-    if u.get("bonus_balance_cents", 0) > 0 and mode in ("prepaid", "postpaid"):
-        lines.append(i18n.t("wallet_bonus", bonus=billing.birr(u["bonus_balance_cents"])))
+    # TOTAL across BOTH money wallets (old-price + new-price) minus any owed debt. Shown for
+    # the money modes AND for anyone who actually holds money — a counter-mode user with a
+    # balance previously saw no figure at all.
+    money = u["balance_cents"] + u.get("balance_new_cents", 0)
+    bonus = u.get("bonus_balance_cents", 0)
+    if mode in ("prepaid", "postpaid") or money or bonus:
+        lines.append(i18n.t("wallet_balance", balance=billing.birr(money - u["owed_cents"])))
+    if bonus > 0:
+        lines.append(i18n.t("wallet_bonus", bonus=billing.birr(bonus)))
     price = await billing.display_price_for(u)   # advertised (new) price; old balance is charged less
     lines.append(i18n.t("wallet_price", price=billing.birr(price)))
     await m.answer("\n".join(lines), reply_markup=kb.main_kb(m.from_user.id))
@@ -411,7 +414,10 @@ async def on_otp(m: Message, state: FSMContext):
     caption = (i18n.t("done_free") if db_free else i18n.t("done")) + (f" ({len(queue)} left)" if queue else "")
     if charge and charge.get("charged"):   # show what was deducted + the new net balance
         amt = billing.birr(charge["charged"])
-        net = billing.birr((charge.get("balance") or 0) - (charge.get("owed") or 0))
+        # TOTAL across both money wallets (old-price + new-price) minus any debt — the same
+        # figure the wallet screen shows, so the two can never disagree.
+        net = billing.birr((charge.get("balance") or 0) + (charge.get("balance_new") or 0)
+                           - (charge.get("owed") or 0))
         key = "charged_postpaid" if charge["mode"] == "postpaid" else "charged_prepaid"
         caption += "\n" + i18n.t(key, charged=amt, balance=net)
         if charge.get("from_bonus"):   # part (or all) came from the bonus wallet
@@ -422,16 +428,33 @@ async def on_otp(m: Message, state: FSMContext):
     sent_shot = False
 
     if want_shots:
-        for i, s in enumerate(shots):
-            last = (i == len(shots) - 1) and not want_pdf
+        files = []
+        for s in shots:
             fn = s["filename"] if "." in s["filename"] else s["filename"] + ".png"
-            try:
-                await m.answer_photo(BufferedInputFile(s["bytes"], filename=fn),
-                                     caption=caption if last else None)
-                sent_shot = True
-                captioned = captioned or last
-            except Exception:
-                log.exception("failed to send %s screenshot for %s", s.get("label"), m.from_user.id)
+            files.append(BufferedInputFile(s["bytes"], filename=fn))
+        cap = None if want_pdf else caption      # the PDF carries the caption when both go out
+        try:
+            if len(files) > 1:
+                # ONE album (like faydapdf-railway) instead of separate photos. Telegram shows
+                # the FIRST item's caption as the album caption. sendMediaGroup needs 2-10
+                # items, so a single screenshot still goes as an ordinary photo.
+                await m.answer_media_group(
+                    [InputMediaPhoto(media=f, caption=cap if i == 0 else None)
+                     for i, f in enumerate(files)])
+            else:
+                await m.answer_photo(files[0], caption=cap)
+            sent_shot = True
+            captioned = cap is not None
+        except Exception:
+            log.exception("media group failed for %s — falling back to single photos", m.from_user.id)
+            for i, f in enumerate(files):     # album rejected → send them one by one
+                last = (i == len(files) - 1) and not want_pdf
+                try:
+                    await m.answer_photo(f, caption=caption if last else None)
+                    sent_shot = True
+                    captioned = captioned or last
+                except Exception:
+                    log.exception("failed to send screenshot %s for %s", i, m.from_user.id)
     # If the user wanted screenshots but none could be sent, still give them the PDF.
     if want_shots and not sent_shot and res.get("pdf"):
         want_pdf = True

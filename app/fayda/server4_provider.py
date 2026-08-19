@@ -16,6 +16,7 @@ import asyncio
 import base64
 import contextvars
 import hashlib
+import json
 import os
 import secrets
 import time
@@ -307,6 +308,20 @@ async def _init_esignet(http: aiohttp.ClientSession, authorize_url: str, spoof_i
     return {"xsrf": xsrf, "oauth_details": details, "oauth_hash": _hash_oauth_details(details), "transaction_id": txn, "spoof_ip": spoof_ip}
 
 
+async def _json_step(r, step: str):
+    """Parse a Fayda JSON response, or raise a message that says WHICH step failed and what
+    actually came back. Without this an empty/HTML reply surfaced to the user as the useless
+    'Expecting value: line 1 column 1 (char 0)'."""
+    raw = await r.text()
+    if not raw.strip():
+        raise RuntimeError(f"{step}: empty response (HTTP {r.status}) — Fayda did not answer, please retry")
+    try:
+        return json.loads(raw)
+    except ValueError:
+        snippet = " ".join(raw.split())[:120]
+        raise RuntimeError(f"{step}: unexpected non-JSON reply (HTTP {r.status}): {snippet}")
+
+
 class Server4Provider(FaydaProvider):
     name = "server4"
 
@@ -323,7 +338,7 @@ class Server4Provider(FaydaProvider):
                 "otpChannels": config.FAYDA_OTP_CHANNELS, "captchaToken": None}}
             async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/send-otp",
                                 headers=_esignet_headers(sess), json=body) as r:
-                d = await r.json(content_type=None)
+                d = await _json_step(r, "send-otp")
             if _esignet_error(d):
                 await http.close()
                 return err(_esignet_error(d))
@@ -348,7 +363,7 @@ class Server4Provider(FaydaProvider):
                 "challengeList": [{"authFactorType": "OTP", "challenge": otp, "format": "alpha-numeric"}]}}
             async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/v2/authenticate",
                                 headers=_esignet_headers(sess), json=body) as r:
-                ad = await r.json(content_type=None)
+                ad = await _json_step(r, "authenticate(OTP)")
             if _esignet_error(ad):
                 return err(_esignet_error(ad))
             details = sess["oauth_details"]
@@ -359,7 +374,7 @@ class Server4Provider(FaydaProvider):
                 "transactionId": sess["transaction_id"], "acceptedClaims": accepted, "permittedAuthorizeScopes": []}}
             async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/auth-code",
                                 headers=_esignet_headers(sess), json=body) as r:
-                cd = await r.json(content_type=None)
+                cd = await _json_step(r, "auth-code")
             if _esignet_error(cd):
                 return err(_esignet_error(cd))
             code = _payload(cd).get("code")
@@ -377,7 +392,7 @@ class Server4Provider(FaydaProvider):
                         async with cb.post(config.FAYDA_API_BASE + path,
                                            headers=_backend_headers(token or None, spoof_ip=sess.get("spoof_ip")), json=cb_body) as r:
                             cb_status = r.status
-                            user = await r.json(content_type=None)
+                            user = await _json_step(r, "callback")
                 except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                     cb_err = e
                     continue

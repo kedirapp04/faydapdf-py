@@ -181,6 +181,46 @@ async def can_download(user: dict) -> tuple[bool, str, int]:
     return True, "", price
 
 
+async def refund_download(user_id: int, charge: dict) -> bool:
+    """Undo a charge whose download was never delivered (e.g. the Telegram upload failed).
+
+    Puts every cent back in the SAME wallet it came from, clears any debt that was booked,
+    and deletes the download row so counters/limits aren't consumed either — all in one
+    transaction under the user-row lock, exactly like charge_and_log. Returns True if
+    anything was reversed."""
+    if not charge or not charge.get("charged"):
+        return False
+    from_bonus = int(charge.get("from_bonus") or 0)
+    from_balance = int(charge.get("from_balance") or 0)
+    from_new = int(charge.get("from_new") or 0)
+    shortfall = int(charge.get("shortfall") or 0)
+    dl_id = charge.get("download_id")
+    if not (from_bonus or from_balance or from_new or shortfall):
+        return False
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT balance_cents, balance_new_cents, bonus_balance_cents, owed_cents "
+                "FROM users WHERE telegram_id=$1 FOR UPDATE", user_id)
+            if row is None:
+                return False
+            balance = row["balance_cents"] + from_balance
+            balance_new = row["balance_new_cents"] + from_new
+            bonus_balance = row["bonus_balance_cents"] + from_bonus
+            owed = max(0, row["owed_cents"] - shortfall)      # un-book the debt we created
+            await conn.execute(
+                "UPDATE users SET balance_cents=$1, balance_new_cents=$2, bonus_balance_cents=$3, "
+                "owed_cents=$4, updated_at=now() WHERE telegram_id=$5",
+                balance, balance_new, bonus_balance, owed, user_id)
+            await conn.execute(
+                "INSERT INTO wallet_ledger (user_id, kind, amount_cents, balance_after_cents, reason, ref_type, ref_id) "
+                "VALUES ($1,'credit',$2,$3,'refund_undelivered','download',$4)",
+                user_id, from_bonus + from_balance + from_new + shortfall, balance, dl_id)
+            if dl_id:      # the download never happened — don't let it eat a counter slot
+                await conn.execute("DELETE FROM downloads WHERE id=$1", int(dl_id))
+    return True
+
+
 async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: str, fmt: str = "pdf") -> dict:
     """Atomically record the download and apply the charge for this billing mode.
     Returns {mode, charged, balance, owed} so the caller can show a deduction line.
@@ -202,7 +242,7 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
                 "INSERT INTO downloads (user_id, fan_hash, format, cost_cents) VALUES ($1,$2,$3,$4) RETURNING id",
                 user_id, fan_hash, fmt, price_cents,
             )
-            charged = from_bonus = 0
+            charged = from_bonus = from_balance = from_new = shortfall = 0
             balance = owed = bonus_balance = balance_new = None
             if price_cents > 0 and mode in ("prepaid", "postpaid") and urow:
                 bal, bal_new = urow["balance_cents"], urow["balance_new_cents"]
@@ -241,4 +281,8 @@ async def charge_and_log(user_id: int, price_cents: int, mode: str, fan_hash: st
             # counter: no money movement
             return {"mode": mode, "charged": charged, "from_bonus": from_bonus,
                     "balance": balance, "balance_new": balance_new,
-                    "bonus_balance": bonus_balance, "owed": owed}
+                    "bonus_balance": bonus_balance, "owed": owed,
+                    # exact per-wallet breakdown + the download row, so a failed
+                    # delivery can be reversed to the cent (see refund_download)
+                    "from_balance": from_balance, "from_new": from_new,
+                    "shortfall": shortfall, "download_id": dl_id}

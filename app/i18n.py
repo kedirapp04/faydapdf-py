@@ -167,6 +167,14 @@ CATALOG = {
                         "• 10-ቁምፊ transaction number (ለምሳሌ DGI70RYNL7)\n"
                         "📷 …ወይም የTelebirr ደረሰኝ ስክሪንሾት ይላኩ — አነባለሁ።\n\n"
                         "Auto-check ከተከፈተ ብሩ ከተረጋገጠ በኋላ ይጨመራል፤ አለበለዚያ አስተዳዳሪ ያጸድቀዋል።")},
+    "delivery_failed_refunded": {
+        "en": "⚠️ We couldn't send your file (connection problem). You were NOT charged — "
+              "your balance is unchanged. Please send the FIN again.",
+        "am": "⚠️ ፋይሉን መላክ አልቻልንም (የግንኙነት ችግር)። ምንም አልተቀነሰብዎትም — ቀሪ ሂሳብዎ እንዳለ ነው። "
+              "እባክዎ FIN እንደገና ይላኩ።"},
+    "delivery_failed": {
+        "en": "⚠️ We couldn't send your file (connection problem). Please send the FIN again.",
+        "am": "⚠️ ፋይሉን መላክ አልቻልንም (የግንኙነት ችግር)። እባክዎ FIN እንደገና ይላኩ።"},
     "try_sms_or_link": {"en": ("💡 We couldn't confirm that screenshot. It's usually the transaction "
                                "number being misread.\nPlease send ONE of these as text instead:\n"
                                "• the full SMS you got from 127\n"

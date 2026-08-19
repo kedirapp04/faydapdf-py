@@ -426,6 +426,7 @@ async def on_otp(m: Message, state: FSMContext):
                                      bonus_left=billing.birr(charge.get("bonus_balance") or 0))
     captioned = False
     sent_shot = False
+    sent_pdf = False
 
     if want_shots:
         files = []
@@ -467,8 +468,26 @@ async def on_otp(m: Message, state: FSMContext):
             suffix = ""
         fn = f"{base} {suffix}".strip() + ".pdf" if suffix else base + ".pdf"
         doc = BufferedInputFile(res["pdf"], filename=fn)
-        await m.answer_document(doc, caption=caption)
-        captioned = True
+        try:
+            await m.answer_document(doc, caption=caption)
+            sent_pdf = True
+            captioned = True
+        except Exception:
+            # A failed upload (flaky link, ~1MB file) must NOT leave the user charged —
+            # handled by the refund guard below.
+            log.exception("failed to send PDF for %s", m.from_user.id)
+    # NOTHING reached the user (upload failed / all sends errored) → give the money back.
+    # The charge happens before delivery so the caption can show the new balance, so this
+    # guard is what keeps 'charged but no PDF' from ever sticking.
+    if not (sent_shot or sent_pdf):
+        refunded = False
+        try:
+            refunded = await billing.refund_download(m.from_user.id, charge or {})
+        except Exception:
+            log.exception('refund failed for %s after undelivered download', m.from_user.id)
+        await m.answer(i18n.t('delivery_failed_refunded' if refunded else 'delivery_failed'))
+        await state.clear()
+        return
     if not captioned:
         await m.answer(caption)
     # Multi-FAN: continue with the next queued id, keeping the chosen output format.

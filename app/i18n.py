@@ -167,6 +167,16 @@ CATALOG = {
                         "• 10-ቁምፊ transaction number (ለምሳሌ DGI70RYNL7)\n"
                         "📷 …ወይም የTelebirr ደረሰኝ ስክሪንሾት ይላኩ — አነባለሁ።\n\n"
                         "Auto-check ከተከፈተ ብሩ ከተረጋገጠ በኋላ ይጨመራል፤ አለበለዚያ አስተዳዳሪ ያጸድቀዋል።")},
+    "try_sms_or_link": {"en": ("💡 We couldn't confirm that screenshot. It's usually the transaction "
+                               "number being misread.\nPlease send ONE of these as text instead:\n"
+                               "• the full SMS you got from 127\n"
+                               "• the receipt link (https://transactioninfo.ethiotelecom.et/receipt/DH…)\n"
+                               "• the 10-character transaction number"),
+                        "am": ("💡 ስክሪንሾቱን ማረጋገጥ አልቻልንም። አብዛኛውን ጊዜ የግብይት ቁጥሩ በስህተት ስለሚነበብ ነው።\n"
+                               "እባክዎ ከእነዚህ አንዱን በጽሑፍ ይላኩ፦\n"
+                               "• ከ127 የደረሰዎትን ሙሉ መልዕክት (SMS)\n"
+                               "• የደረሰኙን ሊንክ (https://transactioninfo.ethiotelecom.et/receipt/DH…)\n"
+                               "• ባለ 10-ቁምፊ የግብይት ቁጥር")},
     "send_txn_short": {"en": ("❓ That's not a receipt or a FIN/FAN.\n"
                               "• To add balance: send your Telebirr/CBE transaction number, receipt link, or screenshot.\n"
                               "• To download an ID: send a 12- or 16-digit FIN/FAN.\n"

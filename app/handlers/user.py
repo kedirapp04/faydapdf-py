@@ -565,12 +565,16 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
     # A provider CONFIRMED a real payment but to a DIFFERENT account (receiver was
     # extracted and doesn't match any of ours) → AUTO-REJECT, don't bother the admin.
     # receiver_mismatch only fires when a receiver IS configured (fails open otherwise).
+    # A screenshot that couldn't be credited is usually a MISREAD transaction number, not a
+    # bad payment — so point the user at the exact text they can send instead.
+    hint = ("\n\n" + i18n.t("try_sms_or_link")) if screenshot_file_id else ""
+
     if v.get("receiver_mismatch"):
         payment, created = await payments_repo.submit(m.from_user.id, receipt_id, bank, 0, "auto")
         if not created:
             return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
         await payments_repo.reject(payment["id"], "auto:receiver_mismatch", "paid to a different account")
-        return await wait.edit_text(i18n.t("receipt_wrong_account"))
+        return await wait.edit_text(i18n.t("receipt_wrong_account") + hint)
 
     flag = ""
     if v.get("already_used"):
@@ -578,7 +582,7 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
     payment, created = await payments_repo.submit(m.from_user.id, receipt_id, bank, 0, "manual")
     if not created:
         return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
-    await wait.edit_text(i18n.t("receipt_submitted", id=payment["id"]))
+    await wait.edit_text(i18n.t("receipt_submitted", id=payment["id"]) + hint)
     # The admin still sees the image itself in their Telegram DM (attached below).
     await _notify_admins_payment(m.bot, payment, m.from_user, flag, screenshot_file_id)
 

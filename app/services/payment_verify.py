@@ -332,7 +332,16 @@ async def verify(receipt_id: str) -> dict:
                 last = _norm(False, res["provider"], error="receipt already used", already_used=True)
                 continue
             if not await receiver_ok_any(res, bank):   # match ANY configured receiver
-                last = _norm(False, res["provider"], error="paid to a different account", receiver_mismatch=True)
+                # Only claim "paid to a different account" when the provider actually TOLD us
+                # who was paid and it isn't us. receiver_ok fails closed, so a receipt with no
+                # receiver data would otherwise be reported as someone else's payment — which
+                # is what a mistyped / mis-OCR'd reference looks like. Without that data we
+                # can only say we couldn't confirm it → manual review, not an accusation.
+                if str(res.get("receiver_name") or "").strip() or str(res.get("receiver_account") or "").strip():
+                    last = _norm(False, res["provider"], error="paid to a different account",
+                                 receiver_mismatch=True)
+                else:
+                    last = _norm(False, res["provider"], error="could not confirm the receiver")
                 continue
             res["bank"] = bank
             return res

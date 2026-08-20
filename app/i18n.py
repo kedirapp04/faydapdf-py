@@ -140,10 +140,10 @@ CATALOG = {
     "paused": {"en": "⏸ The service is paused for maintenance. Please try again later.",
                "am": "⏸ አገልግሎቱ ለጥገና ቆሟል። እባክዎ ቆየት ብለው ይሞክሩ።"},
     # forgot-FAN
-    "forgot_name": {"en": "🔑 Forgot FAN/FIN — free.\n\nSend your FULL NAME (in ENGLISH only) and "
-                          "REGISTERED PHONE — together or one at a time (e.g. Abebe Kebede Alemu 0911223344):",
-                    "am": "🔑 FAN/FIN ረሱ — ነፃ።\n\nሙሉ ስምዎን (በእንግሊዝኛ ብቻ) እና የተመዘገበ ስልክ ቁጥርዎን ይላኩ "
-                          "— አብረው ወይም ለየብቻ (ለምሳሌ፦ Abebe Kebede Alemu 0911223344)፦"},
+    "forgot_name": {"en": "🔑 Forgot FAN/FIN — free.\n\nSend your REGISTERED PHONE NUMBER (e.g. 0911223344).\n"
+                          "You may include your name if you like (e.g. Abebe Kebede 0911223344) — only the phone is used.",
+                    "am": "🔑 FAN/FIN ረሱ — ነፃ።\n\nየተመዘገበ የስልክ ቁጥርዎን ይላኩ (ለምሳሌ፦ 0911223344)።\n"
+                          "ከፈለጉ ስምዎን አብረው መላክ ይችላሉ (ለምሳሌ፦ Abebe Kebede 0911223344) — የሚያገለግለው ስልኩ ብቻ ነው።"},
     "forgot_need_fullname": {"en": "Please send your FULL name in ENGLISH (e.g. Abebe Kebede Alemu), or tap Cancel.",
                              "am": "እባክዎ ሙሉ ስምዎን በእንግሊዝኛ ይላኩ (ለምሳሌ፦ Abebe Kebede Alemu)፣ ወይም Cancel ይጫኑ።"},
     "forgot_phone": {"en": "📱 Now send your REGISTERED phone number (e.g. 0911223344):",
@@ -152,6 +152,18 @@ CATALOG = {
                          "am": "ትክክለኛ የኢትዮጵያ ስልክ ይላኩ (ለምሳሌ፦ 0911223344)፣ ወይም Cancel ይጫኑ።"},
     "forgot_requesting": {"en": "📩 Requesting your FAN + FIN by SMS…",
                           "am": "📩 FAN + FIN በSMS እየተጠየቀ ነው…"},
+    "forgot_wait": {
+        "en": "⏳ A recovery SMS was already sent for this ID in the last 24 hours.\nPlease try again in about {wait}.",
+        "am": "⏳ ላለፉት 24 ሰዓታት ውስጥ ለዚህ መታወቂያ የማስታወሻ SMS ተልኳል።\nእባክዎ ከ{wait} ገደማ በኋላ እንደገና ይሞክሩ።"},
+    "forgot_wait_unknown": {
+        "en": "⏳ A recovery SMS was already sent for this ID in the last 24 hours. Please try again later.",
+        "am": "⏳ ላለፉት 24 ሰዓታት ውስጥ ለዚህ መታወቂያ የማስታወሻ SMS ተልኳል። እባክዎ ቆይተው ይሞክሩ።"},
+    "forgot_not_registered": {
+        "en": "🚫 No Fayda record is registered to {phone}.\nCheck the number and try again — it must be the phone you registered with Fayda.",
+        "am": "🚫 በ{phone} የተመዘገበ የፋይዳ መረጃ የለም።\nቁጥሩን አረጋግጠው እንደገና ይሞክሩ — በፋይዳ የተመዘገቡበት ስልክ መሆን አለበት።"},
+    "forgot_unavailable": {
+        "en": "⚠️ The recovery service isn't responding right now. Please try again in a few minutes.",
+        "am": "⚠️ የማስታወሻ አገልግሎቱ አሁን ምላሽ እየሰጠ አይደለም። እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።"},
     "forgot_done": {"en": "✅ Done. Your FAN and FIN were sent by SMS to {phone}.",
                     "am": "✅ ተጠናቀቀ። FAN እና FIN በSMS ወደ {phone} ተልኳል።"},
     "forgot_err": {"en": "⚠️ {error}", "am": "⚠️ {error}"},

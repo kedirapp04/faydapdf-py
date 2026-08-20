@@ -65,6 +65,13 @@ def _api_provider() -> ApiProvider:
     return _providers["api"]
 
 
+async def forgot_fan_direct(phone: str) -> dict:
+    """Forgot-FAN straight to id.et. Preferred over the gateway because it preserves the real
+    reason (and id.et's retryAfter) instead of a generic 'service unavailable'."""
+    from .forgot_direct import request_fcn_sms
+    return await request_fcn_sms(phone)
+
+
 async def forgot_fan(name: str, phone: str) -> dict:
     """FAN/FIN recovery — independent of the download mode. Always via the API
     provider when it's configured (Server-4 mode has no native recovery), else the

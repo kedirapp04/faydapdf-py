@@ -512,25 +512,32 @@ async def forgot_collect(m: Message, state: FSMContext):
     time. BOTH are mandatory — we keep whatever's provided and ask for the rest."""
     data = await state.get_data()
     pn, pp = _parse_name_phone(m.text)
-    # A name counts only as a FULL name (≥ 2 words); keep anything already collected.
-    name = data.get("name") or (pn if _name_ok(pn) else None)
+    # Only the PHONE matters: id.et's resend-sms body is phone-only, so the name is never
+    # sent upstream. Any name is accepted, and a bare phone number works on its own
+    # (a placeholder stands in for the name we keep for our own records).
+    name = data.get("name") or pn or "A"
     phone = data.get("phone") or pp
-    if name and phone:
-        await state.clear()
-        wait = await m.answer(i18n.t("forgot_requesting"))
-        res = await fayda.forgot_fan(name, phone)
-        if res.get("ok"):
-            await wait.edit_text(i18n.t("forgot_done", phone=res.get("phone") or "your phone"))
-        else:
-            await wait.edit_text(i18n.t("forgot_err", error=res.get("error")))
-        return
-    await state.update_data(name=name, phone=phone)
-    if not name:
-        await state.set_state(Flow.forgot_name)
-        return await m.answer(i18n.t("forgot_need_fullname"), reply_markup=kb.cancel_kb())
-    await state.set_state(Flow.forgot_phone)
-    prompt = "forgot_bad_phone" if (pp is None and data.get("name")) else "forgot_phone"
-    await m.answer(i18n.t(prompt), reply_markup=kb.cancel_kb())
+    if not phone:
+        await state.update_data(name=name, phone=None)
+        await state.set_state(Flow.forgot_phone)
+        return await m.answer(i18n.t("forgot_phone"), reply_markup=kb.cancel_kb())
+
+    await state.clear()
+    wait = await m.answer(i18n.t("forgot_requesting"))
+    res = await fayda.forgot_fan_direct(phone)
+    if res.get("ok"):
+        return await wait.edit_text(i18n.t("forgot_done", phone=res.get("phone") or "your phone"))
+    reason = res.get("reason")
+    if reason == "rate_limited":
+        from ..fayda.forgot_direct import human_wait
+        wait_txt = human_wait(res.get("retry_after"))
+        key = "forgot_wait" if wait_txt else "forgot_wait_unknown"
+        return await wait.edit_text(i18n.t(key, wait=wait_txt))
+    if reason == "not_registered":
+        return await wait.edit_text(i18n.t("forgot_not_registered", phone=phone))
+    if reason == "invalid_phone":
+        return await wait.edit_text(i18n.t("forgot_bad_phone"))
+    return await wait.edit_text(i18n.t("forgot_unavailable"))
 
 
 # ── add-balance: receipt submission (auto-verify → auto-approve, else manual) ─

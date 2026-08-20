@@ -328,12 +328,16 @@ async def api_tracked():
                (SELECT COALESCE(sum(bonus_cents),0)::bigint FROM users)          AS bonuses,
                (SELECT COALESCE(sum(bonus_balance_cents),0)::bigint FROM users)  AS bonus_wallet,
                (SELECT COALESCE(sum(balance_cents+balance_new_cents),0)::bigint FROM users) AS balances,
+               (SELECT COALESCE(sum(balance_cents),0)::bigint FROM users)     AS balances_old,
+               (SELECT COALESCE(sum(balance_new_cents),0)::bigint FROM users) AS balances_new,
                (SELECT COALESCE(sum(owed_cents),0)::bigint FROM users)           AS owed
     """), None)
     approved = row["approved"] if row else 0
     bonuses = row["bonuses"] if row else 0
     bonus_wallet = row["bonus_wallet"] if row else 0
     balances = row["balances"] if row else 0
+    balances_old = row["balances_old"] if row else 0
+    balances_new = row["balances_new"] if row else 0
     owed = row["owed"] if row else 0
     recharge = approved + bonuses
     return {
@@ -342,6 +346,10 @@ async def api_tracked():
         "current_bonus_wallet_cents": bonus_wallet,     # bonus still spendable (separate wallet)
         "tracked_recharge_cents": recharge,
         "current_balances_cents": balances,
+        # the same money split by price tier (both EXCLUDE the bonus wallet, which is
+        # reported separately as current_bonus_wallet_cents)
+        "balances_old_cents": balances_old,   # charged at the OLD price
+        "balances_new_cents": balances_new,   # charged at the NEW price
         "net_used_cents": recharge - balances,
         "balance_wo_bonuses_cents": balances - bonuses,
         "owed_cents": owed,

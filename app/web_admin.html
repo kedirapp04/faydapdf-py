@@ -415,6 +415,7 @@ async function loadTracked(){
       ["Bonus wallet (unspent)",t.current_bonus_wallet_cents],
       ["Recharge (topups+bonus)",t.tracked_recharge_cents],["Net used",t.net_used_cents],
       ["Current balances",t.current_balances_cents],["Balance w/o bonus",t.balance_wo_bonuses_cents],
+      ["🕘 Old-price balance",t.balances_old_cents],["🆕 New-price balance",t.balances_new_cents],
       ["Owed",t.owed_cents]];
     $("#trackCards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v" style="font-size:16px">${birr(v)}</div></div>`).join("");
   }catch(e){}

@@ -154,6 +154,8 @@ async def api_stats():
     if _sp is not None:
         d["bonus_in_balance_cents"] = _sp["bonus_in_balance"]
         d["balance_wo_bonuses_cents"] = int(d.get("balance_cents") or 0) - _sp["bonus_in_balance"]
+        d["net_users"] = _sp["net_users"]
+        d["balance_users"] = _sp["bal_users"]
     d["global_price_cents"] = await _safe(billing.global_price_cents(), 0)      # OLD price (existing balance)
     d["new_price_cents"] = await _safe(billing.new_price_cents(), 0)           # NEW price (new top-ups)
     d["vip_price_cents"] = int(await _safe(settings_repo.get("vip_price_cents"), None) or 0)
@@ -328,7 +330,9 @@ async def api_downloads():
 _BONUS_SPLIT: dict = {"at": 0.0, "val": {k: 0 for k in (
     "bonus_in_balance", "free_balance", "free_users", "wallet_grant",
     "legacy_granted", "legacy_left", "neg_users", "neg_overhang",
-    "bonus_in_old", "bonus_in_new")}}
+    "bonus_in_old", "bonus_in_new", "net_users", "bal_users",
+    "old_users", "new_users", "both_users",
+    "old_net_users", "new_net_users", "both_net_users")}}
 _BONUS_SPLIT_TTL = 120.0     # the receipts tab polls /api/tracked every 8s — don't re-scan the ledger that often
 
 # How much of the users' BALANCE is bonus money rather than money they paid.
@@ -355,6 +359,30 @@ SELECT COALESCE(sum(CASE WHEN COALESCE(p.amt,0)=0 THEN u.balance_cents+u.balance
                 FILTER (WHERE COALESCE(p.amt,0)=0),0)::bigint                    AS free_balance,
        count(*) FILTER (WHERE COALESCE(p.amt,0)=0
                           AND u.balance_cents+u.balance_new_cents>0)::int        AS free_users,
+       -- how many users actually hold real (non-bonus) money: a never-payer holds none
+       -- by definition, so only payers whose balance survives their legacy grant count
+       count(*) FILTER (WHERE COALESCE(p.amt,0)>0
+                          AND (u.balance_cents+u.balance_new_cents)
+                              - LEAST(u.balance_cents,
+                                      GREATEST(u.bonus_cents-COALESCE(w.g,0),0)) > 0)::int AS net_users,
+       -- and how many hold any balance at all, for context
+       count(*) FILTER (WHERE u.balance_cents+u.balance_new_cents>0)::int         AS bal_users,
+       -- per-tier head counts. "net" = after the bonus is taken out, so a never-payer
+       -- never counts (all their money is free) and a payer counts only if their wallet
+       -- survives the legacy grant. Legacy bonus sits in the OLD wallet only, which is
+       -- why the new tier just needs paid>0.
+       count(*) FILTER (WHERE u.balance_cents>0)::int                             AS old_users,
+       count(*) FILTER (WHERE u.balance_new_cents>0)::int                         AS new_users,
+       count(*) FILTER (WHERE u.balance_cents>0 AND u.balance_new_cents>0)::int   AS both_users,
+       count(*) FILTER (WHERE COALESCE(p.amt,0)>0
+                          AND u.balance_cents
+                              - LEAST(u.balance_cents,
+                                      GREATEST(u.bonus_cents-COALESCE(w.g,0),0)) > 0)::int AS old_net_users,
+       count(*) FILTER (WHERE COALESCE(p.amt,0)>0 AND u.balance_new_cents>0)::int AS new_net_users,
+       count(*) FILTER (WHERE COALESCE(p.amt,0)>0 AND u.balance_new_cents>0
+                          AND u.balance_cents
+                              - LEAST(u.balance_cents,
+                                      GREATEST(u.bonus_cents-COALESCE(w.g,0),0)) > 0)::int AS both_net_users,
        -- the same bonus, split by price tier. Legacy bonus was credited into the OLD
        -- wallet, so that is the only wallet it can sit in; a never-payer's NEW wallet is
        -- free money too (they bought none of it). The two sum back to bonus_in_balance.
@@ -429,6 +457,13 @@ async def api_tracked():
         "bonus_in_new_cents": split["bonus_in_new"],
         "balances_old_wo_bonus_cents": balances_old - split["bonus_in_old"],
         "balances_new_wo_bonus_cents": balances_new - split["bonus_in_new"],
+        # head counts per tier: holders of any balance, and holders of real money
+        "old_users": split["old_users"],
+        "new_users": split["new_users"],
+        "both_users": split["both_users"],              # hold BOTH wallets
+        "old_net_users": split["old_net_users"],
+        "new_net_users": split["new_net_users"],
+        "both_net_users": split["both_net_users"],      # real money in BOTH wallets
         "net_used_cents": recharge - balances,
         "total_spendable_cents": balances + bonus_wallet,   # the real liability to users
         # Bonus still sitting INSIDE the balance, and the balance net of it. Computed
@@ -439,6 +474,8 @@ async def api_tracked():
         "balance_wo_bonuses_cents": balances - split["bonus_in_balance"],
         "free_balance_cents": split["free_balance"],        # held by users who never paid
         "free_users": split["free_users"],
+        "net_users": split["net_users"],                    # users holding real (non-bonus) money
+        "balance_users": split["bal_users"],                # users holding any balance at all
         # the lifetime bonus counter, split by where the money actually landed
         "bonus_to_wallet_cents": split["wallet_grant"],           # went to the bonus wallet
         "legacy_bonus_granted_cents": split["legacy_granted"],    # went INTO balance (50/15 era)

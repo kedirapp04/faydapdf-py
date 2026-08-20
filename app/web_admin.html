@@ -420,18 +420,20 @@ async function loadTracked(){
     // [label, cents, sub-note]. A `null` row is a section heading (spans the grid).
     const G=[
       [null,"💰 What users hold now"],
-      ["🕘 Old-price balance",t.balances_old_cents,"balance_cents"],
-      ["🆕 New-price balance",t.balances_new_cents,"balance_new_cents"],
+      ["🕘 Old-price balance",t.balances_old_cents,`${(t.old_users||0).toLocaleString()} users · balance_cents`],
+      ["🆕 New-price balance",t.balances_new_cents,`${(t.new_users||0).toLocaleString()} users · balance_new_cents`],
+      ["👥 Have BOTH wallets",`${(t.both_users||0).toLocaleString()} users`,"hold old + new at once"],
       ["Current balances",t.current_balances_cents,"old + new"],
       ["🎁 Bonus wallet (unspent)",t.current_bonus_wallet_cents,"separate · spent first"],
       ["Total spendable",t.total_spendable_cents,"balances + bonus wallet = liability"],
       ["Owed (debt)",t.owed_cents,"users in the red"],
 
       [null,"🧮 How much of the balance is bonus"],
-      ["🎁 Bonus inside balance",t.bonus_in_balance_cents,"free money still held"],
-      ["💵 Balance w/o bonus",t.balance_wo_bonuses_cents,"money users actually paid for"],
-      ["🕘 Old-price w/o bonus",t.balances_old_wo_bonus_cents,`old ${birr(t.balances_old_cents)} − bonus ${birr(t.bonus_in_old_cents)}`],
-      ["🆕 New-price w/o bonus",t.balances_new_wo_bonus_cents,`new ${birr(t.balances_new_cents)} − bonus ${birr(t.bonus_in_new_cents)}`],
+      ["🎁 Bonus inside balance",t.bonus_in_balance_cents,`free money still held · ${(t.balance_users||0).toLocaleString()} users have a balance`],
+      ["💵 Balance w/o bonus",t.balance_wo_bonuses_cents,`${(t.net_users||0).toLocaleString()} users · money they actually paid for`],
+      ["🕘 Old-price w/o bonus",t.balances_old_wo_bonus_cents,`${(t.old_net_users||0).toLocaleString()} users · ${birr(t.balances_old_cents)} − bonus ${birr(t.bonus_in_old_cents)}`],
+      ["🆕 New-price w/o bonus",t.balances_new_wo_bonus_cents,`${(t.new_net_users||0).toLocaleString()} users · ${birr(t.balances_new_cents)} − bonus ${birr(t.bonus_in_new_cents)}`],
+      ["👥 Real money in BOTH",`${(t.both_net_users||0).toLocaleString()} users`,"non-bonus money in old + new"],
       ["Held by never-payers",t.free_balance_cents,`${(t.free_users||0).toLocaleString()} users · never paid a Birr`],
       ["Legacy bonus, payers",t.payer_bonus_in_balance_cents,"50/15-era, still unspent"],
 
@@ -449,7 +451,7 @@ async function loadTracked(){
     ];
     const card=([k,v,sub])=>k===null
       ? `<div style="grid-column:1/-1;margin:6px 0 -4px;font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em">${v}</div>`
-      : `<div class="card"><div class="k">${k}</div><div class="v" style="font-size:16px">${birr(v)}</div>`
+      : `<div class="card"><div class="k">${k}</div><div class="v" style="font-size:16px">${typeof v==="number"?birr(v):v}</div>`
         +(sub?`<div class="k" style="text-transform:none;letter-spacing:0;font-weight:500;margin-top:4px;opacity:.75">${sub}</div>`:"")+`</div>`;
     $("#trackCards").innerHTML=G.map(card).join("")
       +`<div style="grid-column:1/-1;margin-top:10px;font-size:12px;color:var(--mut)">`

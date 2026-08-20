@@ -148,6 +148,12 @@ async def api_stats():
         for bid in config.BOT_REGISTRY
     ]
     d["paused"] = await _safe(settings_repo.get_bool("paused", False), False)
+    # Net (bonus-free) balance on the main dashboard, not just the Receipts tab.
+    # `balance_cents` here is already old+new summed by stats_repo.dashboard().
+    _sp = await _safe(_bonus_split(), None)
+    if _sp is not None:
+        d["bonus_in_balance_cents"] = _sp["bonus_in_balance"]
+        d["balance_wo_bonuses_cents"] = int(d.get("balance_cents") or 0) - _sp["bonus_in_balance"]
     d["global_price_cents"] = await _safe(billing.global_price_cents(), 0)      # OLD price (existing balance)
     d["new_price_cents"] = await _safe(billing.new_price_cents(), 0)           # NEW price (new top-ups)
     d["vip_price_cents"] = int(await _safe(settings_repo.get("vip_price_cents"), None) or 0)
@@ -319,6 +325,73 @@ async def api_downloads():
             "top": [{"user_id": r["user_id"], "username": r["username"], "n": r["n"]} for r in top]}
 
 
+_BONUS_SPLIT: dict = {"at": 0.0, "val": {k: 0 for k in (
+    "bonus_in_balance", "free_balance", "free_users", "wallet_grant",
+    "legacy_granted", "legacy_left", "neg_users", "neg_overhang",
+    "bonus_in_old", "bonus_in_new")}}
+_BONUS_SPLIT_TTL = 120.0     # the receipts tab polls /api/tracked every 8s — don't re-scan the ledger that often
+
+# How much of the users' BALANCE is bonus money rather than money they paid.
+# Bonus reached the balance in two different ways, so one flat subtraction can't work:
+#   * legacy era (the 50 / 15 Birr welcome bonus) was credited straight INTO balance_cents,
+#     with no ledger row of its own — it arrived inside the 'migration' lump;
+#   * every bonus since then goes to the SEPARATE bonus wallet and never touches balance.
+# So `bonus_cents` (LIFETIME granted) mixes both, and a big share of the legacy grant has
+# already been SPENT. Subtracting it whole double-counts. Instead, per user:
+#   * never had an approved payment  -> every cent they hold is free money;
+#   * has paid                       -> only the legacy grant, clamped to the OLD wallet
+#                                       (the only wallet it could ever sit in).
+_BONUS_SPLIT_SQL = """
+WITH wal AS (
+  SELECT user_id, sum(amount_cents)::bigint AS g FROM wallet_ledger
+  WHERE kind='credit' AND reason IN ('welcome_bonus','topup_bonus','bonus') GROUP BY 1
+), paid AS (
+  SELECT user_id, sum(amount_cents)::bigint AS amt FROM payments WHERE status='approved' GROUP BY 1
+)
+SELECT COALESCE(sum(CASE WHEN COALESCE(p.amt,0)=0 THEN u.balance_cents+u.balance_new_cents
+                         ELSE LEAST(u.balance_cents,
+                                    GREATEST(u.bonus_cents-COALESCE(w.g,0),0)) END),0)::bigint AS bonus_in_balance,
+       COALESCE(sum(u.balance_cents+u.balance_new_cents)
+                FILTER (WHERE COALESCE(p.amt,0)=0),0)::bigint                    AS free_balance,
+       count(*) FILTER (WHERE COALESCE(p.amt,0)=0
+                          AND u.balance_cents+u.balance_new_cents>0)::int        AS free_users,
+       -- the same bonus, split by price tier. Legacy bonus was credited into the OLD
+       -- wallet, so that is the only wallet it can sit in; a never-payer's NEW wallet is
+       -- free money too (they bought none of it). The two sum back to bonus_in_balance.
+       COALESCE(sum(CASE WHEN COALESCE(p.amt,0)=0 THEN u.balance_cents
+                         ELSE LEAST(u.balance_cents,
+                                    GREATEST(u.bonus_cents-COALESCE(w.g,0),0)) END),0)::bigint AS bonus_in_old,
+       COALESCE(sum(CASE WHEN COALESCE(p.amt,0)=0 THEN u.balance_new_cents
+                         ELSE 0 END),0)::bigint                                  AS bonus_in_new,
+       -- where the LIFETIME bonus counter actually went
+       COALESCE(sum(COALESCE(w.g,0)),0)::bigint                                  AS wallet_grant,
+       COALESCE(sum(GREATEST(u.bonus_cents-COALESCE(w.g,0),0)),0)::bigint        AS legacy_granted,
+       COALESCE(sum(LEAST(u.balance_cents,
+                          GREATEST(u.bonus_cents-COALESCE(w.g,0),0))),0)::bigint AS legacy_left,
+       -- how badly the old flat `balances - bonus_cents` breaks: per-user deficits that
+       -- can never really exist, but which that formula folds into the global total
+       count(*) FILTER (WHERE u.bonus_cents > u.balance_cents+u.balance_new_cents)::int AS neg_users,
+       COALESCE(sum(GREATEST(u.bonus_cents-(u.balance_cents+u.balance_new_cents),0)),0)::bigint AS neg_overhang
+FROM users u
+LEFT JOIN wal  w ON w.user_id=u.telegram_id
+LEFT JOIN paid p ON p.user_id=u.telegram_id
+"""
+
+
+async def _bonus_split() -> dict:
+    """Cached bonus-vs-real-money split (see _BONUS_SPLIT_SQL). Two joins over the whole
+    ledger, so it is refreshed at most every _BONUS_SPLIT_TTL seconds; on any error the
+    last good value is reused rather than showing a wrong zero."""
+    now = time.time()
+    if now - _BONUS_SPLIT["at"] < _BONUS_SPLIT_TTL:
+        return _BONUS_SPLIT["val"]
+    row = await _safe(pool().fetchrow(_BONUS_SPLIT_SQL), None)
+    if row is not None:
+        _BONUS_SPLIT["val"] = dict(row)
+        _BONUS_SPLIT["at"] = now
+    return _BONUS_SPLIT["val"]
+
+
 @app.get("/api/tracked", dependencies=[Depends(require_admin)])
 async def api_tracked():
     """Money-tracking totals (mirrors faydapdf-railway's Payment Approvals summary).
@@ -339,6 +412,7 @@ async def api_tracked():
     balances_old = row["balances_old"] if row else 0
     balances_new = row["balances_new"] if row else 0
     owed = row["owed"] if row else 0
+    split = await _bonus_split()
     recharge = approved + bonuses
     return {
         "approved_topups_cents": approved,
@@ -350,8 +424,32 @@ async def api_tracked():
         # reported separately as current_bonus_wallet_cents)
         "balances_old_cents": balances_old,   # charged at the OLD price
         "balances_new_cents": balances_new,   # charged at the NEW price
+        # each tier with its bonus taken out (the two nets sum to balance_wo_bonuses_cents)
+        "bonus_in_old_cents": split["bonus_in_old"],
+        "bonus_in_new_cents": split["bonus_in_new"],
+        "balances_old_wo_bonus_cents": balances_old - split["bonus_in_old"],
+        "balances_new_wo_bonus_cents": balances_new - split["bonus_in_new"],
         "net_used_cents": recharge - balances,
-        "balance_wo_bonuses_cents": balances - bonuses,
+        "total_spendable_cents": balances + bonus_wallet,   # the real liability to users
+        # Bonus still sitting INSIDE the balance, and the balance net of it. Computed
+        # per user (see _bonus_split) — NOT `balances - bonus_cents`, which subtracted
+        # both the wallet-era bonuses that never touched balance and the legacy bonuses
+        # users had already spent, and so read far too low.
+        "bonus_in_balance_cents": split["bonus_in_balance"],
+        "balance_wo_bonuses_cents": balances - split["bonus_in_balance"],
+        "free_balance_cents": split["free_balance"],        # held by users who never paid
+        "free_users": split["free_users"],
+        # the lifetime bonus counter, split by where the money actually landed
+        "bonus_to_wallet_cents": split["wallet_grant"],           # went to the bonus wallet
+        "legacy_bonus_granted_cents": split["legacy_granted"],    # went INTO balance (50/15 era)
+        "legacy_bonus_left_cents": split["legacy_left"],          # ..still unspent
+        "legacy_bonus_spent_cents": split["legacy_granted"] - split["legacy_left"],
+        "payer_bonus_in_balance_cents": split["bonus_in_balance"] - split["free_balance"],
+        # what the retired `balances - bonus_cents` formula produced, kept so the
+        # dashboard can show the old figure next to the corrected one
+        "legacy_formula_cents": balances - bonuses,
+        "legacy_formula_neg_users": split["neg_users"],
+        "legacy_formula_neg_cents": split["neg_overhang"],
         "owed_cents": owed,
         "accounts": await _safe(_accounts_dto(), {}),
     }

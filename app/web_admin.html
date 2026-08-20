@@ -109,6 +109,7 @@
     <button class="tab on" data-tab="users" onclick="showTab('users')">👥 Users</button>
     <button class="tab" data-tab="broadcast" onclick="showTab('broadcast')">📢 Broadcast</button>
     <button class="tab" data-tab="receipts" onclick="showTab('receipts')">🧾 Receipts</button>
+    <button class="tab" data-tab="money" onclick="showTab('money')">💰 Money</button>
     <button class="tab" data-tab="downloads" onclick="showTab('downloads')">📥 Downloads</button>
     <button class="tab" data-tab="billing" onclick="showTab('billing')">⚙️ Billing</button>
   </div>
@@ -172,9 +173,12 @@
     <div class="scroll"><table id="campTbl"><thead><tr><th>#</th><th>Title</th><th>Status</th><th>✅</th><th>⚠️</th><th>🚫</th><th>Left</th><th>Total</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
   </div>
 
-  <div class="panel tabpanel hide" id="p-receipts">
+  <div class="panel tabpanel hide" id="p-money">
     <div class="mini">💰 Tracked totals</div>
     <div class="cards" id="trackCards" style="margin-bottom:16px"></div>
+  </div>
+
+  <div class="panel tabpanel hide" id="p-receipts">
     <div class="row" style="margin-bottom:12px">
       <select id="payStatus" onchange="loadReceipts(1)"><option value="" selected>All</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
       <input id="payQ" placeholder="Search receipt / user / admin id / provider… (auto)" oninput="deb(loadReceipts)" />
@@ -369,7 +373,8 @@ function showTab(t){
   document.querySelectorAll(".tabpanel").forEach(p=>p.classList.add("hide"));
   $("#p-"+t).classList.remove("hide");
   if(t==="users")loadUsers(PAGE.users);
-  if(t==="receipts"){loadReceipts(PAGE.receipts);loadTracked();receiptsPoll();}
+  if(t==="receipts"){loadReceipts(PAGE.receipts);receiptsPoll();}
+  if(t==="money")loadTracked();
   if(t==="downloads")loadDownloads();
   if(t==="broadcast"){bcCount();loadCampaigns();}
   if(t==="billing"){bonusCount();bonusThreshCount();}
@@ -380,7 +385,7 @@ function receiptsPoll(){
     if($("#p-receipts").classList.contains("hide")){clearInterval(receiptsTimer);receiptsTimer=null;return;}
     const ae=document.activeElement;   // don't refresh while typing an amount / search
     if(ae&&$("#p-receipts").contains(ae)&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
-    loadReceipts();loadTracked();
+    loadReceipts();   // totals live on the Money tab now — no need to poll them here
   },8000);
 }
 
@@ -410,14 +415,48 @@ async function applyBulkMode(){
 }
 
 async function loadTracked(){
+  if(!$("#trackCards"))return;          // Money tab not in the DOM — skip the request
   try{const t=await api("/api/tracked");
-    const it=[["Approved top-ups",t.approved_topups_cents],["Bonuses granted",t.tracked_bonuses_cents],
-      ["Bonus wallet (unspent)",t.current_bonus_wallet_cents],
-      ["Recharge (topups+bonus)",t.tracked_recharge_cents],["Net used",t.net_used_cents],
-      ["Current balances",t.current_balances_cents],["Balance w/o bonus",t.balance_wo_bonuses_cents],
-      ["🕘 Old-price balance",t.balances_old_cents],["🆕 New-price balance",t.balances_new_cents],
-      ["Owed",t.owed_cents]];
-    $("#trackCards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v" style="font-size:16px">${birr(v)}</div></div>`).join("");
+    // [label, cents, sub-note]. A `null` row is a section heading (spans the grid).
+    const G=[
+      [null,"💰 What users hold now"],
+      ["🕘 Old-price balance",t.balances_old_cents,"balance_cents"],
+      ["🆕 New-price balance",t.balances_new_cents,"balance_new_cents"],
+      ["Current balances",t.current_balances_cents,"old + new"],
+      ["🎁 Bonus wallet (unspent)",t.current_bonus_wallet_cents,"separate · spent first"],
+      ["Total spendable",t.total_spendable_cents,"balances + bonus wallet = liability"],
+      ["Owed (debt)",t.owed_cents,"users in the red"],
+
+      [null,"🧮 How much of the balance is bonus"],
+      ["🎁 Bonus inside balance",t.bonus_in_balance_cents,"free money still held"],
+      ["💵 Balance w/o bonus",t.balance_wo_bonuses_cents,"money users actually paid for"],
+      ["🕘 Old-price w/o bonus",t.balances_old_wo_bonus_cents,`old ${birr(t.balances_old_cents)} − bonus ${birr(t.bonus_in_old_cents)}`],
+      ["🆕 New-price w/o bonus",t.balances_new_wo_bonus_cents,`new ${birr(t.balances_new_cents)} − bonus ${birr(t.bonus_in_new_cents)}`],
+      ["Held by never-payers",t.free_balance_cents,`${(t.free_users||0).toLocaleString()} users · never paid a Birr`],
+      ["Legacy bonus, payers",t.payer_bonus_in_balance_cents,"50/15-era, still unspent"],
+
+      [null,"📜 Lifetime bonus granted — where it went"],
+      ["Bonuses granted (lifetime)",t.tracked_bonuses_cents,"bonus_cents · never decreases"],
+      ["→ to the bonus wallet",t.bonus_to_wallet_cents,"never touched balance"],
+      ["→ legacy, into balance",t.legacy_bonus_granted_cents,"the 50 / 15 Birr era"],
+      ["   ..still there",t.legacy_bonus_left_cents,"unspent"],
+      ["   ..already spent",t.legacy_bonus_spent_cents,"gone on downloads"],
+
+      [null,"📈 Top-ups"],
+      ["Approved top-ups",t.approved_topups_cents,"incl. imported history"],
+      ["Recharge (topups+bonus)",t.tracked_recharge_cents,null],
+      ["Net used",t.net_used_cents,"recharge − balances"],
+    ];
+    const card=([k,v,sub])=>k===null
+      ? `<div style="grid-column:1/-1;margin:6px 0 -4px;font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em">${v}</div>`
+      : `<div class="card"><div class="k">${k}</div><div class="v" style="font-size:16px">${birr(v)}</div>`
+        +(sub?`<div class="k" style="text-transform:none;letter-spacing:0;font-weight:500;margin-top:4px;opacity:.75">${sub}</div>`:"")+`</div>`;
+    $("#trackCards").innerHTML=G.map(card).join("")
+      +`<div style="grid-column:1/-1;margin-top:10px;font-size:12px;color:var(--mut)">`
+      +`⚠️ The retired formula <code>balances − bonus_cents</code> gave `
+      +`<b>${birr(t.legacy_formula_cents)}</b> — it subtracted spent and wallet-only bonuses, `
+      +`driving ${(t.legacy_formula_neg_users||0).toLocaleString()} users to an impossible negative `
+      +`totalling ${birr(t.legacy_formula_neg_cents)}. Bonus split refreshes every 2 min.</div>`;
   }catch(e){}
 }
 
@@ -461,7 +500,10 @@ async function refresh(){try{const s=await api("/api/stats");LAST.stats=s;render
 function renderCards(s){
   const it=[["Users",s.users],["Active",s.active],["Blocked",s.blocked],["VIP",s.vip],
     ["Pending pay",s.pending_payments],["Downloads today",s.downloads_today],
-    ["Downloads total",s.downloads_total],["Total balance",birrMask(s.balance_cents)],["Top-ups today",birrMask(s.topups_today_cents)]];
+    ["Downloads total",s.downloads_total],["Total balance",birrMask(s.balance_cents)],
+    ["🎁 Bonus in balance",birrMask(s.bonus_in_balance_cents)],
+    ["💵 Net balance (no bonus)",birrMask(s.balance_wo_bonuses_cents)],
+    ["Top-ups today",birrMask(s.topups_today_cents)]];
   $("#cards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 }
 function renderBilling(s){

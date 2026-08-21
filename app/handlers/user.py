@@ -583,6 +583,28 @@ def _should_renotify(payment_id: int) -> bool:
     return True
 
 
+async def _retry_pending(m: Message, wait: Message, payment: dict, receipt_id: str,
+                         hint: str, flag: str, screenshot_file_id=None) -> None:
+    """A receipt was re-sent while its row is still PENDING.
+
+    The re-check already happened: every send runs the selected verifier (plus look-alike
+    variants) BEFORE we get here, and _finalize_receipt credits the existing pending row
+    the moment that verifier confirms it — no admin step. Reaching this point means the
+    verifier said "not confirmed" again, so there is no amount to credit; approve() would
+    refuse amount <= 0 rather than invent one.
+
+    What we must not do is dead-end. The old code replied "already submitted (pending)"
+    and stopped, and since the admins were only alerted when the row was NEW, a missed
+    first alert could never resurface however many times the user re-sent. So: tell the
+    user plainly it is being reviewed and they must not pay twice, and re-alert the
+    admins (throttled)."""
+    await wait.edit_text(i18n.t("receipt_pending_again", id=payment["id"]) + hint)
+    if _should_renotify(payment["id"]):
+        await _notify_admins_payment(m.bot, payment, m.from_user,
+                                     (flag + " 🔁 RESUBMITTED by the user — auto-verify still "
+                                      "cannot confirm it").strip(), screenshot_file_id)
+
+
 async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict, screenshot_file_id=None) -> None:
     """Given a verify() result, auto-approve (right merchant, not used, amount > 0) or
     fall to manual admin review. Shared by the text and screenshot paths."""
@@ -629,17 +651,7 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
     if not created:
         if payment["status"] != "pending":
             return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
-        # Still pending, and the verifier could not confirm an amount. It CANNOT be
-        # credited automatically — approve() refuses amount <= 0 rather than invent a
-        # figure. This used to dead-end here with "already submitted", and because the
-        # admin was only notified when the row was NEW, a missed first alert could never
-        # resurface no matter how often the user re-sent it. Ping the admins again.
-        await wait.edit_text(i18n.t("receipt_pending_again", id=payment["id"]) + hint)
-        if _should_renotify(payment["id"]):
-            await _notify_admins_payment(m.bot, payment, m.from_user,
-                                         (flag + " 🔁 RESUBMITTED by the user").strip(),
-                                         screenshot_file_id)
-        return
+        return await _retry_pending(m, wait, payment, receipt_id, hint, flag, screenshot_file_id)
     await wait.edit_text(i18n.t("receipt_submitted", id=payment["id"]) + hint)
     # The admin still sees the image itself in their Telegram DM (attached below).
     await _notify_admins_payment(m.bot, payment, m.from_user, flag, screenshot_file_id)

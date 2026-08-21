@@ -213,6 +213,32 @@ async def api_user(uid: int):
     return dto
 
 
+async def _admin_receipt(conn, uid: int, cents: int, kind: str) -> str:
+    """Write a payments row for a manual admin credit/deduction, so every balance change
+    has a receipt and not just a ledger line.
+
+    A CREDIT is recorded as `approved` — it is real money added, so it belongs in the
+    top-up totals and makes the user count as a payer. A DEDUCTION is recorded with
+    status `deduction`, deliberately NOT `approved`: payments.amount_cents is constrained
+    >= 0, so a deduction cannot be stored as a negative top-up, and counting it as an
+    approved one would inflate every revenue figure. Its own status keeps it visible in
+    the Receipts tab while staying out of the `status='approved'` sums.
+
+    Runs inside the caller's transaction, so the receipt and the money move together.
+    """
+    prefix = "ADM" if kind == "credit" else "DED"
+    status = "approved" if kind == "credit" else "deduction"
+    rid = f"{prefix}-{uid}-{time.time_ns() // 1000}"     # microseconds: unique per user
+    await conn.execute(
+        "INSERT INTO payments (user_id, receipt_id, bank, amount_cents, status, provider, "
+        "reason, decided_by, decided_at) "
+        "VALUES ($1,$2,'admin',$3,$4,'admin',$5,'web-admin',now())",
+        uid, rid, int(cents), status,
+        f"manual {kind} by admin",
+    )
+    return rid
+
+
 @app.post("/api/users/{uid}/action", dependencies=[Depends(require_admin)])
 async def api_user_action(uid: int, request: Request):
     body = await request.json()
@@ -240,6 +266,7 @@ async def api_user_action(uid: int, request: Request):
         async with pool().acquire() as conn:
             async with conn.transaction():
                 nb = await wallet.credit_new(conn, uid, cents, "adjust", ref_type="admin", ref_id=0)
+                await _admin_receipt(conn, uid, cents, "credit")
         await _notify(uid, i18n.t("credited_notify", amount=billing.birr(cents), balance=billing.birr(nb)))
     elif action == "deduct":
         cents = _cents(body.get("value")) or 0
@@ -249,6 +276,7 @@ async def api_user_action(uid: int, request: Request):
             async with conn.transaction():
                 # Spans BOTH money wallets (new-price money first), never below zero.
                 await wallet.debit_any(conn, uid, cents, "adjust", ref_type="admin", ref_id=0)
+                await _admin_receipt(conn, uid, cents, "deduct")
     elif action == "bonus":
         cents = _cents(body.get("value")) or 0
         if cents <= 0:

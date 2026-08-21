@@ -121,6 +121,18 @@
       <select id="vipF" onchange="loadUsers(1)"><option value="">All users</option><option value="1">VIP only</option><option value="0">Non-VIP</option></select>
       <select id="modeF" onchange="loadUsers(1)"><option value="">All modes</option><option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option></select>
       <select id="bonusF" onchange="loadUsers(1)"><option value="">Any bonus</option><option value="wallet">Has bonus wallet</option><option value="unspent">Never charged (holds balance)</option></select>
+      <select id="moneyF" onchange="loadUsers(1)" title="Same cohorts as the Money tab">
+        <option value="">💰 Any money</option>
+        <option value="old_balance">🕘 Has old-price balance</option>
+        <option value="new_balance">🆕 Has new-price balance</option>
+        <option value="both_wallets">👥 Has BOTH wallets</option>
+        <option value="real_money">💵 Holds real money (non-bonus)</option>
+        <option value="free_money">🎁 Never paid (all bonus)</option>
+        <option value="spent_out">📉 Paid, now only bonus left</option>
+        <option value="bonus_wallet">🎁 Has bonus wallet</option>
+        <option value="in_debt">⚠️ In debt (owes)</option>
+        <option value="empty">🕳 Nothing left to spend</option>
+      </select>
     </div>
     <div class="scroll"><table id="usrTbl"><thead><tr><th>User</th><th>Status</th><th>Mode</th><th>Balance</th><th>Price</th><th>📥 Downloads</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
     <div class="pager" id="usrPager"></div>
@@ -140,6 +152,17 @@
         <option value="all">All users</option><option value="active">Active</option>
         <option value="vip">VIP only</option><option value="with_balance">With balance</option>
         <option value="charged">Charged (paid ≥1)</option>
+        <optgroup label="💰 Money">
+          <option value="old_balance">🕘 Has old-price balance</option>
+          <option value="new_balance">🆕 Has new-price balance</option>
+          <option value="both_wallets">👥 Has BOTH wallets</option>
+          <option value="real_money">💵 Holds real money (non-bonus)</option>
+          <option value="free_money">🎁 Never paid (all bonus)</option>
+          <option value="spent_out">📉 Paid, now only bonus left</option>
+          <option value="bonus_wallet">🎁 Has bonus wallet</option>
+          <option value="in_debt">⚠️ In debt (owes)</option>
+          <option value="empty">🕳 Nothing left to spend</option>
+        </optgroup>
         <option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
       </select>
       <span class="tag" id="bcCount">…</span>
@@ -269,6 +292,17 @@
       <select id="bonusSeg" onchange="bonusCount()">
         <option value="all">All users</option><option value="active">Active</option>
         <option value="vip">VIP only</option><option value="with_balance">With balance</option>
+        <optgroup label="💰 Money">
+          <option value="old_balance">🕘 Has old-price balance</option>
+          <option value="new_balance">🆕 Has new-price balance</option>
+          <option value="both_wallets">👥 Has BOTH wallets</option>
+          <option value="real_money">💵 Holds real money (non-bonus)</option>
+          <option value="free_money">🎁 Never paid (all bonus)</option>
+          <option value="spent_out">📉 Paid, now only bonus left</option>
+          <option value="bonus_wallet">🎁 Has bonus wallet</option>
+          <option value="in_debt">⚠️ In debt (owes)</option>
+          <option value="empty">🕳 Nothing left to spend</option>
+        </optgroup>
         <option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
       </select>
       <span class="tag" id="bonusCount">…</span>
@@ -288,6 +322,17 @@
       <select id="bulkModeSeg">
         <option value="all">All users</option><option value="active">Active</option>
         <option value="vip">VIP only</option><option value="with_balance">With balance</option>
+        <optgroup label="💰 Money">
+          <option value="old_balance">🕘 Has old-price balance</option>
+          <option value="new_balance">🆕 Has new-price balance</option>
+          <option value="both_wallets">👥 Has BOTH wallets</option>
+          <option value="real_money">💵 Holds real money (non-bonus)</option>
+          <option value="free_money">🎁 Never paid (all bonus)</option>
+          <option value="spent_out">📉 Paid, now only bonus left</option>
+          <option value="bonus_wallet">🎁 Has bonus wallet</option>
+          <option value="in_debt">⚠️ In debt (owes)</option>
+          <option value="empty">🕳 Nothing left to spend</option>
+        </optgroup>
         <option value="counter">counter</option><option value="prepaid">prepaid</option><option value="postpaid">postpaid</option>
       </select>
       <select id="bulkModeVal"><option value="prepaid">→ prepaid</option><option value="counter">→ counter</option><option value="postpaid">→ postpaid</option></select>
@@ -566,7 +611,8 @@ async function saveMaintMsg(){await saveSet({maintenance_message:$("#maintMsg").
 async function loadUsers(p){
   PAGE.users=p||PAGE.users;
   const q=encodeURIComponent($("#q").value.trim()),st=$("#statusF").value,vip=$("#vipF").value,mode=$("#modeF").value,bonus=$("#bonusF").value;
-  const d=await api(`/api/users?page=${PAGE.users}&q=${q}&status=${st}&vip=${vip}&mode=${mode}&bonus=${bonus}`);
+  const money=($("#moneyF")||{}).value||"";
+  const d=await api(`/api/users?page=${PAGE.users}&q=${q}&status=${st}&vip=${vip}&mode=${mode}&bonus=${bonus}&money=${money}`);
   const tb=$("#usrTbl tbody");
   if(!d.users.length){tb.innerHTML=`<tr><td colspan="6" class="muted">No users.</td></tr>`;$("#usrPager").innerHTML="";return}
   tb.innerHTML=d.users.map(userRow).join("");

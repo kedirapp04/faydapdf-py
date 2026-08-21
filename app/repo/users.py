@@ -87,12 +87,45 @@ async def count() -> int:
     return await pool().fetchval("SELECT count(*)::int FROM users")
 
 
+# ── money cohorts ───────────────────────────────────────────────────────────────
+# Defined ONCE here and used by both the Users filter and the broadcast segments, so a
+# filter always selects exactly the users counted on the Money tab. Keep these rules in
+# step with _BONUS_SPLIT_SQL in app/web.py.
+#
+# The catch these encode: bonus reached users two different ways. Legacy (the 50/15-Birr
+# era) was credited INTO balance_cents; everything since goes to the separate
+# bonus_balance_cents wallet. So "real money" = balance minus whatever legacy grant is
+# still sitting in the OLD wallet, and a user who never paid holds no real money at all.
+SQL_WALLET_GRANT = ("COALESCE((SELECT sum(l.amount_cents) FROM wallet_ledger l "
+                    "WHERE l.user_id = users.telegram_id AND l.kind = 'credit' "
+                    "AND l.reason IN ('welcome_bonus','topup_bonus','bonus')), 0)")
+SQL_HAS_PAID = ("EXISTS (SELECT 1 FROM payments p WHERE p.user_id = users.telegram_id "
+                "AND p.status = 'approved')")
+SQL_LEGACY_LEFT = f"LEAST(balance_cents, GREATEST(bonus_cents - {SQL_WALLET_GRANT}, 0))"
+SQL_REAL_MONEY = f"(balance_cents + balance_new_cents - {SQL_LEGACY_LEFT})"
+SQL_ANY_BALANCE = "(balance_cents + balance_new_cents) > 0"
+
+MONEY_COHORTS: dict[str, str] = {
+    "old_balance":  "balance_cents > 0",
+    "new_balance":  "balance_new_cents > 0",
+    "both_wallets": "balance_cents > 0 AND balance_new_cents > 0",
+    "real_money":   f"{SQL_HAS_PAID} AND {SQL_REAL_MONEY} > 0",
+    "free_money":   f"NOT {SQL_HAS_PAID} AND {SQL_ANY_BALANCE}",
+    "spent_out":    f"{SQL_HAS_PAID} AND {SQL_ANY_BALANCE} AND {SQL_REAL_MONEY} <= 0",
+    "bonus_wallet": "bonus_balance_cents > 0",
+    "in_debt":      "owed_cents > 0",
+    "empty":        f"NOT {SQL_ANY_BALANCE} AND bonus_balance_cents = 0",
+}
+
+
 async def page(status: str | None, q: str | None, limit: int, offset: int,
                is_vip: bool | None = None, mode: str | None = None,
-               bonus: str | None = None) -> tuple[list[dict], int]:
-    """Paginated + optional filters (status / VIP / billing mode / bonus) + search
-    (username or id). Returns (rows, total)."""
+               bonus: str | None = None, money: str | None = None) -> tuple[list[dict], int]:
+    """Paginated + optional filters (status / VIP / billing mode / bonus / money cohort)
+    + search (username or id). Returns (rows, total)."""
     where, args = [], []
+    if money and money in MONEY_COHORTS:
+        where.append(f"({MONEY_COHORTS[money]})")
     if status:
         args.append(status)
         where.append(f"status = ${len(args)}")
@@ -105,7 +138,7 @@ async def page(status: str | None, q: str | None, limit: int, offset: int,
     if bonus == "wallet":                 # holds an unspent separate bonus wallet
         where.append("bonus_balance_cents > 0")
     elif bonus == "unspent":              # has balance but was never charged (never downloaded)
-        where.append("balance_cents > 0 AND NOT EXISTS "
+        where.append(f"{SQL_ANY_BALANCE} AND NOT EXISTS "
                      "(SELECT 1 FROM downloads d WHERE d.user_id = users.telegram_id)")
     if q:
         term = q.strip().lstrip("@")

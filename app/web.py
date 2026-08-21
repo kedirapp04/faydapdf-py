@@ -191,12 +191,13 @@ async def _accounts_dto():
 
 
 @app.get("/api/users", dependencies=[Depends(require_admin)])
-async def api_users(page: int = 1, q: str = "", status: str = "", vip: str = "", mode: str = "", bonus: str = ""):
+async def api_users(page: int = 1, q: str = "", status: str = "", vip: str = "", mode: str = "",
+                    bonus: str = "", money: str = ""):
     limit, page = 20, max(1, page)
     is_vip = True if vip == "1" else False if vip == "0" else None
     rows, total = await users_repo.page(
         status or None, q or None, limit, (page - 1) * limit,
-        is_vip=is_vip, mode=(mode or None), bonus=(bonus or None),
+        is_vip=is_vip, mode=(mode or None), bonus=(bonus or None), money=(money or None),
     )
     pages = max(1, -(-total // limit))
     return {"users": [_user_dto(u) for u in rows], "page": page, "pages": pages, "total": total}
@@ -526,9 +527,17 @@ async def api_user_history(uid: int):
 
 
 # ── broadcast (persistent campaigns + rich filters) ──────────────────────────
+_SQL_ANY_BALANCE = users_repo.SQL_ANY_BALANCE
+
+
 def _bcast_where(segment: str) -> str:
     """Simple named segment → a fixed (injection-safe) WHERE clause. Also used by the
     bulk-bonus grant."""
+    # Money cohorts come from users_repo.MONEY_COHORTS so the audience of a broadcast is
+    # exactly the set counted on the Money tab and listed by the Users filter.
+    cohort = users_repo.MONEY_COHORTS.get(segment)
+    if cohort:
+        return f"({cohort}) AND status <> 'blocked'"
     if segment == "active":
         return "status = 'active'"
     if segment == "blocked":
@@ -538,7 +547,9 @@ def _bcast_where(segment: str) -> str:
     if segment in ("counter", "prepaid", "postpaid"):
         return f"billing_mode = '{segment}' AND status <> 'blocked'"
     if segment == "with_balance":
-        return "balance_cents > 0 AND status <> 'blocked'"
+        # BOTH wallets: since two-tier pricing a user can hold money only in the NEW
+        # wallet, and the old `balance_cents > 0` test silently skipped them.
+        return f"{_SQL_ANY_BALANCE} AND status <> 'blocked'"
     if segment == "charged":   # has at least one approved top-up
         return ("EXISTS (SELECT 1 FROM payments p WHERE p.user_id = users.telegram_id "
                 "AND p.status = 'approved') AND status <> 'blocked'")
@@ -560,11 +571,15 @@ def _bcast_filter(segment: str, extra: dict) -> tuple[str, list]:
     role = str(extra.get("role") or "").strip()
     if role:
         args.append(role); where.append(f"role = ${len(args)}")
+    # min/max compare the user's TOTAL spendable balance (old + new wallet), not just the
+    # old one — otherwise a user with 500 Birr in the new wallet reads as 0 here.
     minb, maxb = extra.get("min_balance_birr"), extra.get("max_balance_birr")
     if minb not in (None, ""):
-        args.append(round(float(minb) * 100)); where.append(f"balance_cents >= ${len(args)}")
+        args.append(round(float(minb) * 100))
+        where.append(f"(balance_cents + balance_new_cents) >= ${len(args)}")
     if maxb not in (None, ""):
-        args.append(round(float(maxb) * 100)); where.append(f"balance_cents <= ${len(args)}")
+        args.append(round(float(maxb) * 100))
+        where.append(f"(balance_cents + balance_new_cents) <= ${len(args)}")
     return " AND ".join(where), args
 
 

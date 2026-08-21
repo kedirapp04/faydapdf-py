@@ -261,6 +261,8 @@ CATALOG = {
                           "am": "ይህ ደረሰኝ አስቀድሞ ቀርቧል (ሁኔታ፦ {status})።"},
     "receipt_submitted": {"en": "✅ Receipt submitted (#{id}). An admin will review it shortly.",
                           "am": "✅ ደረሰኝ ቀርቧል (#{id})። አስተዳዳሪ በቅርቡ ይገመግማል።"},
+    "receipt_pending_again": {"en": "⏳ Your receipt (#{id}) is still under review — we've reminded the admin. It will be added as soon as it's approved; you don't need to pay again.",
+                              "am": "⏳ ደረሰኝዎ (#{id}) አሁንም በግምገማ ላይ ነው — ለአስተዳዳሪው አስታውሰናል። እንደተፈቀደ ወዲያውኑ ይጨመራል፤ እንደገና መክፈል አያስፈልግዎትም።"},
     "receipt_wrong_account": {"en": "🚫 This payment went to a different account, so it can't be credited. Please pay to the account shown in Add Payment, then send that receipt.",
                               "am": "🚫 ይህ ክፍያ ወደ ሌላ ሒሳብ ገብቷል፣ ስለዚህ ሊጨመር አይችልም። እባክዎ በ‹ክፍያ ጨምር› ውስጥ ወደሚታየው ሒሳብ ከፍለው ያንን ደረሰኝ ይላኩ።"},
     "approved_notify": {"en": "✅ Your payment was approved. {amount} added.\nNew balance: {balance}.",

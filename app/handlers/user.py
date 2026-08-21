@@ -563,6 +563,26 @@ async def _notify_admins_payment(bot, payment: dict, from_user, flag: str = "", 
             log.exception("failed to notify admin %s of payment %s", aid, payment.get("id"))
 
 
+_RENOTIFY_AFTER = 600.0          # seconds
+_last_renotify: dict[int, float] = {}
+
+
+def _should_renotify(payment_id: int) -> bool:
+    """Throttle admin re-alerts for a re-sent receipt: a user tapping send five times in a
+    row must not fire five DMs at every admin. In-memory on purpose — worst case a restart
+    allows one extra ping, which is far better than losing the alert entirely."""
+    import time as _t
+    now = _t.monotonic()
+    last = _last_renotify.get(payment_id)
+    if last is not None and now - last < _RENOTIFY_AFTER:
+        return False
+    _last_renotify[payment_id] = now
+    if len(_last_renotify) > 5000:                      # bound the dict
+        for k in sorted(_last_renotify, key=_last_renotify.get)[:2500]:
+            _last_renotify.pop(k, None)
+    return True
+
+
 async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict, screenshot_file_id=None) -> None:
     """Given a verify() result, auto-approve (right merchant, not used, amount > 0) or
     fall to manual admin review. Shared by the text and screenshot paths."""
@@ -607,7 +627,19 @@ async def _finalize_receipt(m: Message, wait: Message, receipt_id: str, v: dict,
         flag = "⚠️ Auto-check: receipt reported ALREADY USED — verify before approving."
     payment, created = await payments_repo.submit(m.from_user.id, receipt_id, bank, 0, "manual")
     if not created:
-        return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
+        if payment["status"] != "pending":
+            return await wait.edit_text(i18n.t("already_submitted", status=payment["status"]))
+        # Still pending, and the verifier could not confirm an amount. It CANNOT be
+        # credited automatically — approve() refuses amount <= 0 rather than invent a
+        # figure. This used to dead-end here with "already submitted", and because the
+        # admin was only notified when the row was NEW, a missed first alert could never
+        # resurface no matter how often the user re-sent it. Ping the admins again.
+        await wait.edit_text(i18n.t("receipt_pending_again", id=payment["id"]) + hint)
+        if _should_renotify(payment["id"]):
+            await _notify_admins_payment(m.bot, payment, m.from_user,
+                                         (flag + " 🔁 RESUBMITTED by the user").strip(),
+                                         screenshot_file_id)
+        return
     await wait.edit_text(i18n.t("receipt_submitted", id=payment["id"]) + hint)
     # The admin still sees the image itself in their Telegram DM (attached below).
     await _notify_admins_payment(m.bot, payment, m.from_user, flag, screenshot_file_id)

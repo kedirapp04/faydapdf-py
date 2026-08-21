@@ -535,6 +535,8 @@ async def forgot_collect(m: Message, state: FSMContext):
         return await wait.edit_text(i18n.t(key, wait=wait_txt))
     if reason == "not_registered":
         return await wait.edit_text(i18n.t("forgot_not_registered", phone=phone))
+    if reason == "send_failed":     # Fayda's SMS gateway hiccuped — the number is fine
+        return await wait.edit_text(i18n.t("forgot_send_failed"))
     if reason == "invalid_phone":
         return await wait.edit_text(i18n.t("forgot_bad_phone"))
     return await wait.edit_text(i18n.t("forgot_unavailable"))

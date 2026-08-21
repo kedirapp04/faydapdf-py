@@ -6,8 +6,11 @@ keeps the useful detail:
 
   200                      -> the FAN/FIN was SMSed to the registered phone
   429 + retryAfter         -> already requested for this ID in the last 24h (we show the wait)
-  500 "Failed to send SMS" -> the phone has no Fayda record (id.et's way of saying not found)
   400/404                  -> not registered
+  500 "Failed to send SMS" -> id.et's SMS gateway failed — TRANSIENT, retry shortly.
+                              (This is NOT "no Fayda record": treating it that way told
+                              users their own registered phone was unknown, while the
+                              same number worked on id.et moments later.)
 
 id.et's body is PHONE-ONLY (`individualIdType: "Phone"`), verified across HAR captures — the
 full name the web form collects is never sent upstream. Returns:
@@ -78,9 +81,20 @@ async def request_fcn_sms(phone: str) -> dict:
                 if r.status == 429 or "last 24 hours" in msg.lower():
                     return {"ok": False, "reason": "rate_limited",
                             "retry_after": _retry_after_seconds(body, r), "detail": msg or None}
-                # id.et answers 500 "Failed to send SMS" when the phone has no record.
-                if r.status in (400, 404) or "failed to send sms" in msg.lower():
+                # "Failed to send SMS" is id.et's SMS GATEWAY failing — a transient fault,
+                # NOT proof the phone has no Fayda record. We used to report it as
+                # "no Fayda record is registered to this number", which told users their
+                # own registered phone was unknown; retrying on id.et then worked.
+                # Only an explicit 400/404 (or wording about the record itself) means
+                # not-registered; anything else is "try again shortly".
+                if r.status in (400, 404):
                     return {"ok": False, "reason": "not_registered", "detail": msg or None}
+                low = msg.lower()
+                if any(k in low for k in ("not found", "no record", "not registered",
+                                          "does not exist", "invalid id")):
+                    return {"ok": False, "reason": "not_registered", "detail": msg or None}
+                if r.status >= 500 or "failed to send sms" in low:
+                    return {"ok": False, "reason": "send_failed", "detail": msg or None}
                 return {"ok": False, "reason": "server_error",
                         "detail": msg or str(body.get("error") or f"HTTP {r.status}")}
     except asyncio.TimeoutError:

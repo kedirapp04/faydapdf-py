@@ -164,6 +164,11 @@ CATALOG = {
     "forgot_unavailable": {
         "en": "⚠️ The recovery service isn't responding right now. Please try again in a few minutes.",
         "am": "⚠️ የማስታወሻ አገልግሎቱ አሁን ምላሽ እየሰጠ አይደለም። እባክዎ ከጥቂት ደቂቃዎች በኋላ ይሞክሩ።"},
+    # Fayda accepted the request but its SMS gateway failed. Deliberately NOT
+    # "no record registered" — the number is usually fine and works on a retry.
+    "forgot_send_failed": {
+        "en": "📵 Fayda couldn't send the SMS just now (their system, not your number).\nPlease try again in a few minutes.",
+        "am": "📵 ፋይዳ አሁን SMS መላክ አልቻለም (የእነሱ ሥርዓት ችግር ነው፣ የእርስዎ ቁጥር አይደለም)።\nእባክዎ ከጥቂት ደቂቃዎች በኋላ እንደገና ይሞክሩ።"},
     "forgot_done": {"en": "✅ Done. Your FAN and FIN were sent by SMS to {phone}.",
                     "am": "✅ ተጠናቀቀ። FAN እና FIN በSMS ወደ {phone} ተልኳል።"},
     "forgot_err": {"en": "⚠️ {error}", "am": "⚠️ {error}"},

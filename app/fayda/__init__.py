@@ -1,16 +1,30 @@
 """Fayda flow providers. The active mode is admin-selectable at runtime
-(settings key `fayda_mode`): 'api' (fayda-railway HTTP API) or 'server4'
-(native Server-4 flow)."""
+(settings key `fayda_mode`):
+
+  'api'     — the fayda-railway HTTP API (gateway does the work)
+  'server4' — the native Server-4 flow, run here, from THIS host's IP
+  'proxy'   — the same native Server-4 flow, but its Fayda-facing traffic is sent
+              through an external CONNECT proxy (settings key `relay_proxy_url`),
+              so Fayda sees the PROXY's IP. Still no gateway in between.
+"""
 from .. import config
 from ..repo import settings as settings_repo
 from .api_provider import ApiProvider
 from .server4_provider import Server4Provider
 
+MODES = ("api", "server4", "proxy")
+
 _providers = {}
 
 
+def _norm(mode) -> str:
+    m = (mode or "").strip().lower()
+    return m if m in MODES else "api"
+
+
 def _make(mode: str):
-    if mode == "server4":
+    # 'proxy' is Server-4 with a different exit IP — same flow, same provider class.
+    if mode in ("server4", "proxy"):
         return Server4Provider()
     return ApiProvider()
 
@@ -26,7 +40,7 @@ async def active_mode(bot_id: int | None = None) -> str:
             mode = await settings_repo.get("fayda_mode", config.FAYDA_MODE_DEFAULT)
     except Exception:
         mode = config.FAYDA_MODE_DEFAULT   # DB down → fall back to the env default
-    return "server4" if mode == "server4" else "api"
+    return _norm(mode)
 
 
 async def set_mode(mode: str, bot_id: int | None = None) -> str:
@@ -36,16 +50,16 @@ async def set_mode(mode: str, bot_id: int | None = None) -> str:
         if mode in ("global", "", None):
             await settings_repo.set(f"fayda_mode_{bot_id}", "")
             return "global"
-        mode = "server4" if mode == "server4" else "api"
+        mode = _norm(mode)
         await settings_repo.set(f"fayda_mode_{bot_id}", mode)
         return mode
-    mode = "server4" if mode == "server4" else "api"
+    mode = _norm(mode)
     await settings_repo.set("fayda_mode", mode)
     return mode
 
 
 async def bot_mode_override(bot_id: int) -> str:
-    """The raw per-bot override: 'api' / 'server4' / '' (='global', follows the global)."""
+    """The raw per-bot override: 'api' / 'server4' / 'proxy' / '' (='global')."""
     try:
         return (await settings_repo.get(f"fayda_mode_{bot_id}") or "").strip()
     except Exception:
@@ -56,6 +70,10 @@ async def get_provider(bot_id: int | None = None):
     mode = await active_mode(bot_id)
     if mode not in _providers:
         _providers[mode] = _make(mode)
+    # Decide HERE whether this download exits through the proxy, so every caller gets
+    # it right without having to know about proxy mode.
+    from .server4_provider import set_proxy
+    set_proxy(mode == "proxy")
     return _providers[mode], mode
 
 
@@ -86,6 +104,12 @@ async def pool_status() -> dict:
     """Server-4 token-pool health (for the admin dashboard)."""
     from .server4_provider import pool_status as _ps
     return await _ps()
+
+
+async def proxy_test(url: str = "") -> dict:
+    """Check the proxy used by 'proxy' mode and report the IP Fayda would see."""
+    from .proxy_net import probe
+    return await probe(url)
 
 
 def set_vip_context(vip: bool) -> None:

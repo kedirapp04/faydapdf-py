@@ -71,7 +71,7 @@ async def _panel_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=f"💳 Pending ({pending})", callback_data="pay_list:0")],
         [InlineKeyboardButton(text=f"🔀 Mode: {mode} — switch", callback_data="mode_toggle")],
     ]
-    if mode == "server4":
+    if mode in ("server4", "proxy"):   # proxy mode runs the same flow, same token pool
         rows.append([InlineKeyboardButton(text="🎫 Tokens (pool health)", callback_data="tokens")])
     mlvl = await _safe(maintenance.level(), "off")
     from ..services import payment_verify
@@ -113,7 +113,10 @@ async def cb_mode(c: CallbackQuery):
     if not config.is_admin(c.from_user.id):
         return await c.answer("Admins only")
     cur = await fayda.active_mode()
-    new = await fayda.set_mode("server4" if cur == "api" else "api")
+    # cycle api → server4 → proxy → api
+    order = fayda.MODES
+    nxt = order[(order.index(cur) + 1) % len(order)] if cur in order else "api"
+    new = await fayda.set_mode(nxt)
     await c.answer(f"Mode → {new}")
     await c.message.edit_text(await _panel_text(), reply_markup=await _panel_kb())
 

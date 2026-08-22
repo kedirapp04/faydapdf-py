@@ -28,14 +28,21 @@ import aiohttp
 from .. import config
 from ..repo import settings as settings_repo
 from .base import FaydaProvider, ok, err
-from . import pdf_render
+from . import pdf_render, proxy_net
 
 # Set per-download from the user's VIP flag so token pulls draw from the right pool.
 _vip_ctx = contextvars.ContextVar("s4_vip", default=False)
+# Set per-download by get_provider(): True in download mode 'proxy'. Only the
+# FAYDA-FACING calls honour it — token-pool pulls always go direct (own server).
+_proxy_ctx = contextvars.ContextVar("s4_proxy", default=False)
 
 
 def set_vip(vip: bool) -> None:
     _vip_ctx.set(bool(vip))
+
+
+def set_proxy(on: bool) -> None:
+    _proxy_ctx.set(bool(on))
 
 
 async def _csrf(vip: bool) -> str:
@@ -327,7 +334,9 @@ class Server4Provider(FaydaProvider):
 
     async def send_otp(self, individual_id: str) -> dict:
         await _sweep()
-        http = aiohttp.ClientSession(timeout=_TIMEOUT)
+        # Proxied in 'proxy' mode: this one session carries the authorize call AND the
+        # whole eSignet exchange, i.e. everything Fayda sees.
+        http = await proxy_net.session(_TIMEOUT, _proxy_ctx.get())
         try:
             pkce, state = _pkce(), _state()
             authorize_url = await _authorize(http, pkce, state)
@@ -344,7 +353,10 @@ class Server4Provider(FaydaProvider):
                 return err(_esignet_error(d))
             sid = secrets.token_hex(12)
             _SESSIONS[sid] = {"http": http, "sess": sess, "pkce": pkce, "state": state,
-                              "individual": individual_id, "at": _now()}
+                              "individual": individual_id, "at": _now(),
+                              # pin the callback to the SAME exit IP as the OTP request,
+                              # even if the admin edits the proxy in between
+                              "proxy": proxy_net.url_of(http)}
             masked = (d.get("response") or {}).get("maskedMobile")
             return ok(session=sid, masked_mobile=masked)
         except Exception as e:
@@ -388,7 +400,7 @@ class Server4Provider(FaydaProvider):
             user, cb_status, cb_err = None, 0, None
             for path in ("/api/v2/auth/callback", "/auth/callback"):
                 try:
-                    async with aiohttp.ClientSession(timeout=_TIMEOUT) as cb:
+                    async with proxy_net.session_for(_TIMEOUT, st.get("proxy") or "") as cb:
                         async with cb.post(config.FAYDA_API_BASE + path,
                                            headers=_backend_headers(token or None, spoof_ip=sess.get("spoof_ip")), json=cb_body) as r:
                             cb_status = r.status

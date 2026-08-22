@@ -178,6 +178,7 @@ async def api_stats():
     d["s4_appcheck"] = await _safe(settings_repo.get("s4_appcheck"), "") or ""
     d["s4_token_source"] = await _safe(settings_repo.get("s4_token_source"), "pool") or "pool"
     d["s4_ip_spoof"] = await _safe(settings_repo.get_bool("s4_ip_spoof", True), True)
+    d["relay_proxy_url"] = await _safe(settings_repo.get("relay_proxy_url"), "") or ""
     d["broadcast_via_main"] = await _safe(settings_repo.get_bool("broadcast_via_main", False), False)
     d["vp_base_url"] = await _safe(payment_verify.vp_base_url(), "") or ""
     d["vp_api_key"] = await _safe(payment_verify.vp_api_key(), "") or ""
@@ -858,7 +859,8 @@ async def api_settings(request: Request):
         await billing.set_topup_bonus_tiers(str(body["topup_bonus_tiers"] or ""))
     if "pdf_filename_suffix" in body:
         await settings_repo.set("pdf_filename_suffix", str(body["pdf_filename_suffix"] or "").strip())
-    for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "s4_token_source", "vp_base_url", "vp_api_key"):
+    for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "s4_token_source",
+               "vp_base_url", "vp_api_key", "relay_proxy_url"):
         if _k in body:
             await settings_repo.set(_k, str(body[_k] or "").strip())
     if "s4_ip_spoof" in body:
@@ -878,6 +880,17 @@ async def api_settings(request: Request):
         if f"{bank}_account" in body:
             await settings_repo.set(f"pay_{bank}_account", str(body[f"{bank}_account"] or "").strip())
     return {"ok": True}
+
+
+@app.post("/api/proxy/test", dependencies=[Depends(require_admin)])
+async def api_proxy_test(request: Request):
+    """Test the proxy behind download mode 'proxy'. Tests the URL in the box (so it can
+    be checked BEFORE saving) or the saved one when that's empty."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    return await fayda.proxy_test(str(body.get("url") or "").strip())
 
 
 @app.post("/api/bonus/bulk", dependencies=[Depends(require_admin)])

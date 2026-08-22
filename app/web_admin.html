@@ -227,7 +227,7 @@
     <h2>⚙️ Billing & settings</h2>
     <div class="row">
       <span class="muted">Download mode:</span>
-      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option></select>
+      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option></select>
       <span class="muted" style="margin-left:12px">Service:</span><button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
       <span class="muted" style="margin-left:12px">DB:</span><span id="dbStat" class="tag">…</span>
       <select id="dbPolicy" onchange="saveSet({db_down_policy:this.value})"><option value="refuse">DB down: Refuse</option><option value="free">DB down: Serve free</option><option value="fallback">DB down: Fallback</option></select>
@@ -237,6 +237,14 @@
       <div id="botModes" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
     <div class="muted" style="font-size:12px;margin-top:4px">Each bot uses the global mode unless you override it here.</div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted" style="min-width:110px" title="Used only in Proxy download mode">🌐 Proxy URL:</span>
+      <input id="proxyUrl" style="min-width:320px" placeholder="http://user:pass@VPS-IP:8888"/>
+      <button class="btn sec" onclick="saveSet({relay_proxy_url:$('#proxyUrl').value})">Save</button>
+      <button class="btn sec" onclick="testProxy()">Test</button>
+      <span id="proxyStat" class="muted" style="font-size:12px"></span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px"><b>Proxy mode</b> runs the same native Server-4 flow as Server 4, but sends the Fayda traffic out through this proxy, so Fayda sees the <b>VPS IP</b> instead of this server's. Token-pool calls stay direct. Leave the URL empty and Proxy mode behaves exactly like Server 4.</div>
     <div class="row" style="margin-top:12px">
       <span class="muted" title="Charged while a user still has money they topped up BEFORE the price change">Old price (Birr):</span><input class="sm" id="gprice" type="number" step="0.01" min="0" placeholder="10" />
       <span class="muted" style="margin-left:12px" title="Charged on every NEW top-up from now on">New price (Birr):</span><input class="sm" id="nprice" type="number" step="0.01" min="0" placeholder="15" />
@@ -554,14 +562,14 @@ function renderCards(s){
   $("#cards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 }
 function renderBilling(s){
-  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=s.mode==="server4"?"server4":"api";
+  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy"].indexOf(s.mode)>=0?s.mode:"api";
   const bm=$("#botModes");
   if(bm&&Array.isArray(s.bots)){bm.innerHTML=s.bots.map(b=>{
     const label=(b.username?("@"+b.username):("bot "+b.id))+(b.primary?' <span class="tag">primary</span>':"");
     const opt=(v,t)=>`<option value="${v}"${(b.mode||"")===v?" selected":""}>${t}</option>`;
     return `<span class="row" style="gap:6px"><span class="muted" style="min-width:210px">${label}</span>`+
       `<select onchange='saveSet({bot_mode:{bot_id:${b.id},mode:this.value}})'>`+
-      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+
+      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+
       "</select></span>";
   }).join("");}
   $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
@@ -569,7 +577,7 @@ function renderBilling(s){
   setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);setv("#s4src",s.s4_token_source||"pool");
   {const cb=$("#s4spoof");if(cb)cb.checked=s.s4_ip_spoof!==false;}
   {const m=$("#bcViaMain");if(m)m.checked=!!s.broadcast_via_main;}
-  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);
+  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);setv("#proxyUrl",s.relay_proxy_url);
   const g=$("#gprice"),v=$("#vprice"),np=$("#nprice");
   if(document.activeElement!==g)g.value=(Number(s.global_price_cents||0)/100);
   if(np&&document.activeElement!==np)np.value=(Number(s.new_price_cents||0)/100);
@@ -594,6 +602,17 @@ function renderBilling(s){
 async function togglePause(){const s=await api("/api/stats");await saveSet({paused:!s.paused})}
 async function saveServer4(){await saveSet({s4_csrf_regular:$("#s4reg").value,s4_csrf_vip:$("#s4vip").value,s4_appcheck:$("#s4app").value,s4_token_source:$("#s4src").value,s4_ip_spoof:$("#s4spoof").checked})}
 async function saveSet(o){await api("/api/settings",{method:"POST",body:JSON.stringify(o)});toast("Saved");refresh()}
+async function testProxy(){
+  const el=$("#proxyStat");el.textContent="testing…";el.style.color="";
+  try{
+    const r=await api("/api/proxy/test",{method:"POST",body:JSON.stringify({url:$("#proxyUrl").value})});
+    if(!r.ok){el.style.color="#e05a5a";el.textContent="✖ "+(r.error||"failed");return toast(r.error||"Proxy test failed",1)}
+    if(r.note){el.style.color="#3aa657";el.textContent="✔ "+r.note;return toast("Proxy reaches Fayda")}
+    el.style.color=r.changed?"#3aa657":"#d99a2b";
+    el.textContent=(r.changed?"✔ ":"⚠ ")+"Fayda would see "+r.ip+" ("+r.ms+" ms)"+(r.changed?"":" — same as direct ("+r.direct_ip+"), IP NOT changed");
+    toast(r.changed?"Proxy OK — exit IP "+r.ip:"Proxy works but the IP did not change");
+  }catch(e){el.style.color="#e05a5a";el.textContent="✖ "+e.message}
+}
 async function savePrices(){await saveSet({global_price_birr:$("#gprice").value,new_price_birr:$("#nprice").value,vip_price_birr:$("#vprice").value})}
 async function saveAccounts(){
   const primary={name:$("#tb_name").value.trim(),account:$("#tb_acct").value.trim(),show:true,verify:true};

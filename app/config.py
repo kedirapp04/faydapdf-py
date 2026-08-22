@@ -67,6 +67,11 @@ DB_POOL_MAX = _int("DB_POOL_MAX", 12)
 # The active mode is stored in `settings` (admin-switchable); this is the seed.
 FAYDA_MODE_DEFAULT = (os.getenv("FAYDA_MODE_DEFAULT") or "api").strip().lower()
 
+# Download mode 'proxy': the Server-4 flow sent out through this CONNECT proxy, so
+# Fayda sees the proxy's IP. Admin-overridable (settings key `relay_proxy_url`).
+# Form: http://user:pass@HOST:PORT
+RELAY_PROXY_URL = (os.getenv("RELAY_PROXY_URL") or "").strip()
+
 FAYDA_API_URL = (os.getenv("FAYDA_API_URL") or "").rstrip("/")
 FAYDA_API_KEY = (os.getenv("FAYDA_API_KEY") or "").strip()
 

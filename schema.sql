@@ -160,3 +160,9 @@ CREATE TABLE IF NOT EXISTS broadcast_filters (
   where_clause TEXT NOT NULL,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Broadcast media (photo / video / document / audio / animation). The file is
+-- uploaded to Telegram ONCE when the admin attaches it; every recipient is then
+-- sent the resulting file_id, so nothing is re-uploaded per user.
+ALTER TABLE broadcast_campaigns ADD COLUMN IF NOT EXISTS media_type TEXT;
+ALTER TABLE broadcast_campaigns ADD COLUMN IF NOT EXISTS media_file_id TEXT;

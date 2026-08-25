@@ -67,6 +67,22 @@ DB_POOL_MAX = _int("DB_POOL_MAX", 12)
 # The active mode is stored in `settings` (admin-switchable); this is the seed.
 FAYDA_MODE_DEFAULT = (os.getenv("FAYDA_MODE_DEFAULT") or "api").strip().lower()
 
+# ── Server 5 — resident-portal identity path (api-resident.fayda.et) ────────
+# A plain OAuth client, so it spends NO App Check pool token. Defaults match the
+# live resident portal; only the Basic credential has to be supplied.
+RESIDENT_API_BASE = (os.getenv("RESIDENT_API_BASE") or "https://api-resident.fayda.et").rstrip("/")
+RESIDENT_CLIENT_ID = (os.getenv("RESIDENT_CLIENT_ID")
+                      or "ajcCvwQcVm1dAr6HaW4Y5ObnDmwPPTpH9oDaZSPPrpo").strip()
+RESIDENT_REDIRECT_URI = (os.getenv("RESIDENT_REDIRECT_URI")
+                         or "https://resident.fayda.et/callback").strip()
+# Base64 of "resident:<secret>". Without it Server 5 refuses to start a download
+# rather than failing halfway through, after the user has already had an OTP.
+RESIDENT_BASIC_AUTH = (os.getenv("RESIDENT_BASIC_AUTH") or "").strip()
+RESIDENT_OTP_CHANNELS = [c.strip() for c in
+                         (os.getenv("RESIDENT_OTP_CHANNELS") or "PHONE").split(",") if c.strip()]
+# Phase 5 downloads ~3 MB; never let it inherit a short timeout.
+RESIDENT_TIMEOUT_S = _int("RESIDENT_TIMEOUT_S", 45)
+
 # Download mode 'proxy': the Server-4 flow sent out through this CONNECT proxy, so
 # Fayda sees the proxy's IP. Admin-overridable (settings key `relay_proxy_url`).
 # Form: http://user:pass@HOST:PORT

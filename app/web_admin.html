@@ -184,6 +184,13 @@
     </div>
     <div class="row" style="margin-top:8px"><label class="row" style="gap:6px;align-items:center"><input type="checkbox" id="bcViaMain" onchange="saveSet({broadcast_via_main:this.checked})"> <span class="muted">Send all via the main bot (@NID_downloader_bot) — ignore each user's last bot</span></label></div>
     <div class="row" style="margin-top:8px">
+      <span class="muted">Attach:</span>
+      <input type="file" id="bcFile" onchange="bcUpload()" style="max-width:260px">
+      <span id="bcMediaInfo" class="muted" style="font-size:12px"></span>
+      <button class="btn sec" id="bcMediaClear" onclick="bcClearMedia()" style="display:none">✖ Remove</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Photo, video, GIF, audio or any document (max 45 MB). The file is uploaded to Telegram <b>once</b> and a copy is sent to your admin chat so you can check it — every recipient then gets the same file, nothing is re-uploaded. With a file attached the message text becomes the <b>caption</b>, and the campaign is sent via the <b>main bot</b> (Telegram file IDs only work for the bot that uploaded them).</div>
+    <div class="row" style="margin-top:8px">
       <input id="bcTitle" style="flex:1;min-width:200px" placeholder="Campaign title (optional)">
       <button class="btn" id="bcBtn" onclick="sendBroadcast()">📢 Create &amp; send</button>
     </div>
@@ -227,7 +234,7 @@
     <h2>⚙️ Billing & settings</h2>
     <div class="row">
       <span class="muted">Download mode:</span>
-      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option></select>
+      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option><option value="server5">Server 5 (resident portal)</option></select>
       <span class="muted" style="margin-left:12px">Service:</span><button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
       <span class="muted" style="margin-left:12px">DB:</span><span id="dbStat" class="tag">…</span>
       <select id="dbPolicy" onchange="saveSet({db_down_policy:this.value})"><option value="refuse">DB down: Refuse</option><option value="free">DB down: Serve free</option><option value="fallback">DB down: Fallback</option></select>
@@ -244,6 +251,13 @@
       <button class="btn sec" onclick="testProxy()">Test</button>
       <span id="proxyStat" class="muted" style="font-size:12px"></span>
     </div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted" style="min-width:110px" title="Used only in Server 5 (resident portal) mode">🪪 Resident auth:</span>
+      <input id="residentAuth" style="min-width:320px" placeholder="Basic credential (base64)"/>
+      <button class="btn sec" onclick="saveSet({resident_basic_auth:$('#residentAuth').value})">Save</button>
+      <span id="cardsStat" class="muted" style="font-size:12px"></span>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px"><b>Server 5</b> uses the resident portal (16-digit FAN only) and spends <b>no App Check token</b>. It returns data rather than card images, so the QR and both cards are drawn locally — that needs Node.</div>
     <div class="muted" style="font-size:12px;margin-top:4px"><b>Proxy mode</b> runs the same native Server-4 flow as Server 4, but sends the Fayda traffic out through this proxy, so Fayda sees the <b>VPS IP</b> instead of this server's. Token-pool calls stay direct. Leave the URL empty and Proxy mode behaves exactly like Server 4.</div>
     <div class="row" style="margin-top:12px">
       <span class="muted" title="Charged while a user still has money they topped up BEFORE the price change">Old price (Birr):</span><input class="sm" id="gprice" type="number" step="0.01" min="0" placeholder="10" />
@@ -562,22 +576,25 @@ function renderCards(s){
   $("#cards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 }
 function renderBilling(s){
-  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy"].indexOf(s.mode)>=0?s.mode:"api";
+  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy","server5"].indexOf(s.mode)>=0?s.mode:"api";
   const bm=$("#botModes");
   if(bm&&Array.isArray(s.bots)){bm.innerHTML=s.bots.map(b=>{
     const label=(b.username?("@"+b.username):("bot "+b.id))+(b.primary?' <span class="tag">primary</span>':"");
     const opt=(v,t)=>`<option value="${v}"${(b.mode||"")===v?" selected":""}>${t}</option>`;
     return `<span class="row" style="gap:6px"><span class="muted" style="min-width:210px">${label}</span>`+
       `<select onchange='saveSet({bot_mode:{bot_id:${b.id},mode:this.value}})'>`+
-      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+
-      "</select></span>";
+      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+opt("server5","Server 5 (resident portal)")+
+      `</select><label class="chk" title="Server 5 only. ON: a typed FAN is accepted and the QR is BUILT from the user's data — the card is complete but its QR will NOT pass verification. OFF: the user must send their Telebirr QR screenshot, and the card carries their real, verifiable QR.">`+
+      `<input type="checkbox" ${b.allow_fan?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},allow:this.checked}})'> accept FAN (build QR)</label></span>`;
   }).join("");}
   $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
   const setv=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||""};
   setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);setv("#s4src",s.s4_token_source||"pool");
   {const cb=$("#s4spoof");if(cb)cb.checked=s.s4_ip_spoof!==false;}
   {const m=$("#bcViaMain");if(m)m.checked=!!s.broadcast_via_main;}
-  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);setv("#proxyUrl",s.relay_proxy_url);
+  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);setv("#proxyUrl",s.relay_proxy_url);setv("#residentAuth",s.resident_basic_auth);
+  {const c=$("#cardsStat");if(c){c.style.color=s.cards_ready?"#3aa657":"#d99a2b";
+    c.textContent=s.cards_ready?"✔ card generator ready":("⚠ cards off — "+(s.cards_error||"Node missing")+" (PDF still works)")}}
   const g=$("#gprice"),v=$("#vprice"),np=$("#nprice");
   if(document.activeElement!==g)g.value=(Number(s.global_price_cents||0)/100);
   if(np&&document.activeElement!==np)np.value=(Number(s.new_price_cents||0)/100);
@@ -811,17 +828,44 @@ function bcButtons(){
   }).filter(b=>b&&b.text&&b.url);
 }
 async function bcCount(){try{const d=await api("/api/broadcast/count?"+bcFilterQS());$("#bcCount").textContent=d.count+" recipients"}catch{$("#bcCount").textContent="?"}}
+let BC_MEDIA=null;   // {media_type, file_id, filename, size} once a file is attached
+function bcClearMedia(){
+  BC_MEDIA=null;$("#bcFile").value="";$("#bcMediaInfo").textContent="";
+  $("#bcMediaClear").style.display="none";
+}
+async function bcUpload(){
+  const f=$("#bcFile").files[0];if(!f)return;
+  const mb=(f.size/1048576).toFixed(1);
+  const info=$("#bcMediaInfo");
+  info.style.color="";info.textContent=`uploading ${f.name} (${mb} MB)…`;
+  const fd=new FormData();fd.append("file",f);
+  try{
+    // no Content-Type header — the browser sets the multipart boundary itself
+    const r=await fetch("/api/broadcast/upload",{method:"POST",body:fd});
+    if(!r.ok){let m=r.status;try{m=(await r.json()).detail||m}catch{};throw new Error(m)}
+    BC_MEDIA=await r.json();
+    info.style.color="#3aa657";
+    info.textContent=`✔ ${BC_MEDIA.media_type} attached — ${BC_MEDIA.filename} (${mb} MB). Check your admin chat.`;
+    $("#bcMediaClear").style.display="";
+  }catch(e){
+    BC_MEDIA=null;info.style.color="#e05a5a";info.textContent="✖ "+e.message;
+    $("#bcMediaClear").style.display="none";
+  }
+}
 async function sendBroadcast(){
-  const text=$("#bcText").value.trim();if(!text)return toast("Type a message",true);
+  const text=$("#bcText").value.trim();
+  if(!text&&!BC_MEDIA)return toast("Type a message or attach a file",true);
   const one=$("#bcUser").value.trim();
-  const q=one?`Send this message to user #${one}?`:`Create a campaign to ${$("#bcCount").textContent}?\nThe worker sends ~15/s; you can pause/cancel from the list.`;
+  const what=BC_MEDIA?`${BC_MEDIA.media_type} + caption`:"message";
+  const q=one?`Send this ${what} to user #${one}?`:`Create a campaign (${what}) to ${$("#bcCount").textContent}?\nThe worker sends ~15/s; you can pause/cancel from the list.`;
   if(!confirm(q))return;
   const body={text,title:$("#bcTitle").value,user_id:one,segment:$("#bcSeg").value,parse_mode:$("#bcParse").value||null,buttons:bcButtons(),
     tag:$("#bcTag").value,exclude_tag:$("#bcExTag").value,role:$("#bcRole").value,
-    min_balance:$("#bcMin").value,max_balance:$("#bcMax").value};
+    min_balance:$("#bcMin").value,max_balance:$("#bcMax").value,
+    media_type:BC_MEDIA?BC_MEDIA.media_type:null,media_file_id:BC_MEDIA?BC_MEDIA.file_id:null};
   try{const r=await api("/api/broadcast",{method:"POST",body:JSON.stringify(body)});
     toast(one?`✉️ Sent to #${one} (campaign #${r.campaign_id})`:`📢 Campaign #${r.campaign_id} → ${r.total} recipients`);
-    $("#bcText").value="";$("#bcTitle").value="";$("#bcUser").value="";loadCampaigns();}catch(e){toast(e.message,true)}
+    $("#bcText").value="";$("#bcTitle").value="";$("#bcUser").value="";bcClearMedia();loadCampaigns();}catch(e){toast(e.message,true)}
 }
 async function loadCampaigns(){
   try{

@@ -3,6 +3,7 @@
 Conversation state is aiogram FSM (in-memory); all persistent data is in Postgres.
 """
 import asyncio
+import base64
 import hashlib
 import logging
 import re
@@ -320,6 +321,22 @@ async def _show_payments(m: Message):
 async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queue: list[str],
                           delivery: str = "both", db_free: bool = False, uid=None):
     uid = uid or m.from_user.id   # callback path (format choice) passes the real user id
+    # Server 5 works from the QR image ONLY. The QR is pinned to the id it was scanned
+    # from, so a typed FAN (or a QR scanned for a different id) has none — and without
+    # it the card could only carry a generated QR that no verifier accepts. Refuse
+    # BEFORE the billing gate and the OTP, so nothing is charged or sent.
+    data = await state.get_data()
+    qr_b64 = data.get("qr_b64") if data.get("qr_fan") == fan else None
+    if not qr_b64 and await fayda.active_mode(m.bot.id) == "server5":
+        # A typed FAN is allowed only if this bot is set to accept one. The card is
+        # still drawn, but its QR is generated from the identity data and will not
+        # pass verification — say so before charging anyone for it.
+        if not await fayda.allow_typed_fan(m.bot.id):
+            await state.clear()
+            return await m.answer(i18n.t("qr_required"), reply_markup=kb.main_kb(uid))
+        unsigned_qr = True
+    else:
+        unsigned_qr = False
     # Don't pull a second pool token for the same id in quick succession (double-tap
     # / retry). Distinct ids in a queue use distinct keys, so the queue still flows.
     if _should_skip(f"{uid}:send-otp:{fan}", 10.0):
@@ -333,6 +350,8 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
             return await m.answer(i18n.t("gate_refused", reason=reason))
     wait = await m.answer(i18n.t("otp_requesting", fan=fan))   # show the full FAN/FIN
     fayda.set_vip_context(bool(u.get("is_vip")))   # Server-4: regular vs VIP token pool
+    # Server 5: the QR scanned from this user's screenshot, for THIS id (see above).
+    fayda.set_qr_context(base64.b64decode(qr_b64) if qr_b64 else None)
     provider, _mode = await fayda.get_provider(m.bot.id)   # per-bot download mode
     res = await provider.send_otp(fan)
     if not res.get("ok"):
@@ -341,7 +360,8 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
         await state.clear()
         return await wait.edit_text(i18n.t("otp_send_fail", error=res.get("error")))
     await state.set_state(Flow.otp)
-    await state.update_data(session=res.get("session"), price_cents=price, mode=u["billing_mode"],
+    await state.update_data(unsigned_qr=unsigned_qr,
+                           session=res.get("session"), price_cents=price, mode=u["billing_mode"],
                            fan_hash=_fan_hash(fan), queue=queue, delivery=delivery, db_free=db_free,
                            uid=uid, is_vip=bool(u.get("is_vip")))
     phone = _mask_phone(res.get("masked_mobile"))
@@ -382,12 +402,28 @@ async def on_otp(m: Message, state: FSMContext):
             return await _run_download(m, state, fans, delivery, m.from_user.id)
         return await m.answer(i18n.t("otp_enter_numeric"))
     data = await state.get_data()
+    # Typed-FAN download: the card's QR is generated, so its signature is invalid.
+    # Tell the user plainly at OTP entry — no confirmation step, the download
+    # continues — so nobody is surprised by a PDF that fails verification.
+    if data.get("unsigned_qr"):
+        await m.answer(i18n.t("unsigned_qr_notice"))
+    await _finish_otp(m, state, otp)
+
+
+async def _finish_otp(m: Message, state: FSMContext, otp: str, uid=None, bot=None) -> None:
+    """Verify the OTP and deliver. Split out of on_otp so the confirmation step can
+    resume the exact same path."""
+    # On the button path m.from_user is the BOT and m.bot may be unbound, so the
+    # caller hands us both explicitly; on the text path they come off the message.
+    uid = uid or m.from_user.id
+    bot = bot or m.bot
+    data = await state.get_data()
     session, price_cents, mode, fan_hash = data.get("session"), data.get("price_cents", 0), data.get("mode"), data.get("fan_hash")
     db_free = bool(data.get("db_free"))
     queue = list(data.get("queue") or [])
     wait = await m.answer(i18n.t("verifying"))
     fayda.set_vip_context(bool(data.get("is_vip")))   # Server-4: regular vs VIP token pool
-    provider, _mode = await fayda.get_provider(m.bot.id)   # per-bot download mode
+    provider, _mode = await fayda.get_provider(bot.id)   # per-bot download mode
     res = await provider.verify_pdf(session, otp)
     if not res.get("ok"):
         await state.clear()
@@ -398,9 +434,9 @@ async def on_otp(m: Message, state: FSMContext):
     charge = None
     if not db_free:   # DB down → served free, nothing to charge or record
         try:
-            charge = await billing.charge_and_log(m.from_user.id, int(price_cents), mode, fan_hash)
+            charge = await billing.charge_and_log(uid, int(price_cents), mode, fan_hash)
         except Exception:  # never fail delivery on a billing hiccup, but surface it loudly
-            log.exception("charge_and_log failed for user %s (price=%s mode=%s)", m.from_user.id, price_cents, mode)
+            log.exception("charge_and_log failed for user %s (price=%s mode=%s)", uid, price_cents, mode)
             mark_db_down()
     await wait.delete()
 
@@ -447,7 +483,7 @@ async def on_otp(m: Message, state: FSMContext):
             sent_shot = True
             captioned = cap is not None
         except Exception:
-            log.exception("media group failed for %s — falling back to single photos", m.from_user.id)
+            log.exception("media group failed for %s — falling back to single photos", uid)
             for i, f in enumerate(files):     # album rejected → send them one by one
                 last = (i == len(files) - 1) and not want_pdf
                 try:
@@ -455,7 +491,7 @@ async def on_otp(m: Message, state: FSMContext):
                     sent_shot = True
                     captioned = captioned or last
                 except Exception:
-                    log.exception("failed to send screenshot %s for %s", i, m.from_user.id)
+                    log.exception("failed to send screenshot %s for %s", i, uid)
     # If the user wanted screenshots but none could be sent, still give them the PDF.
     if want_shots and not sent_shot and res.get("pdf"):
         want_pdf = True
@@ -475,16 +511,16 @@ async def on_otp(m: Message, state: FSMContext):
         except Exception:
             # A failed upload (flaky link, ~1MB file) must NOT leave the user charged —
             # handled by the refund guard below.
-            log.exception("failed to send PDF for %s", m.from_user.id)
+            log.exception("failed to send PDF for %s", uid)
     # NOTHING reached the user (upload failed / all sends errored) → give the money back.
     # The charge happens before delivery so the caption can show the new balance, so this
     # guard is what keeps 'charged but no PDF' from ever sticking.
     if not (sent_shot or sent_pdf):
         refunded = False
         try:
-            refunded = await billing.refund_download(m.from_user.id, charge or {})
+            refunded = await billing.refund_download(uid, charge or {})
         except Exception:
-            log.exception('refund failed for %s after undelivered download', m.from_user.id)
+            log.exception('refund failed for %s after undelivered download', uid)
         await m.answer(i18n.t('delivery_failed_refunded' if refunded else 'delivery_failed'))
         await state.clear()
         return
@@ -495,7 +531,7 @@ async def on_otp(m: Message, state: FSMContext):
         nxt_u, nxt_free = _DBDOWN_USER, db_free
         if not db_free:
             try:
-                nxt_u = await users_repo.get(m.from_user.id) or _DBDOWN_USER
+                nxt_u = await users_repo.get(uid) or _DBDOWN_USER
             except Exception:
                 mark_db_down()
                 nxt_u, nxt_free = _DBDOWN_USER, True
@@ -764,10 +800,16 @@ async def on_receipt(m: Message, state: FSMContext):
 # ── add-balance via a Telebirr screenshot (OCR → look-alike correction → verify) ─
 @router.message(F.photo)
 async def on_payment_photo(m: Message, state: FSMContext):
-    # A photo is ALWAYS treated as a payment screenshot — in or out of the Add-Balance
-    # step. Downloads never take a photo (the FIN/FAN is typed), so any image the user
-    # sends is a receipt. Mirrors faydapdf-railway: just send the screenshot anytime.
+    # A photo is normally a payment screenshot. The one exception is a Fayda (National ID) QR
+    # screenshot taken from Telebirr, which starts a DOWNLOAD instead — so try the QR first
+    # and fall through to the receipt path when it isn't one.
+    #
+    # Safe to try on every photo: the scanner only accepts the legacy Fayda QR (it
+    # requires the :DLT: and :SIGN: markers), so a Telebirr receipt — QR on it or
+    # not — never matches and still reaches the payment code below.
     in_receipt = (await state.get_state()) == Flow.receipt.state
+    if not in_receipt and await _try_qr_download(m, state):
+        return
     blk = await _maint_block_action(m.from_user.id)   # HIGH closes payments
     if blk:
         if in_receipt:
@@ -796,6 +838,12 @@ async def on_payment_photo(m: Message, state: FSMContext):
         # payment from an unreadable image; ask for the number (or a clearer photo).
         if not in_receipt:
             await state.clear()
+        # In Server 5 a photo is just as likely to be a QR attempt that Telegram
+        # compressed. Telling the user only "couldn't read the receipt" sends them
+        # hunting for a transaction number they never had.
+        if not in_receipt and await fayda.active_mode(m.bot.id) == "server5":
+            return await wait.edit_text(
+                i18n.t("couldnt_read_txn") + "\n\n" + i18n.t("qr_photo_compressed"))
         return await wait.edit_text(i18n.t("couldnt_read_txn"))
     await state.clear()
     await wait.edit_text(i18n.t("checking_payment"))
@@ -806,6 +854,76 @@ async def on_payment_photo(m: Message, state: FSMContext):
     # A real number was read → verify, else manual review. The admin also gets the
     # image in their Telegram DM for the manual case (not stored in the DB).
     await _finalize_receipt(m, wait, v.get("receipt_id") or txn, v, screenshot_file_id=m.photo[-1].file_id)
+
+
+@router.message(F.document)
+async def on_document(m: Message, state: FSMContext):
+    """An image sent as a FILE. This is the reliable way to receive a Fayda QR:
+    Telegram compresses photos, and the legacy QR is dense enough that compression
+    destroys it — a 572x1280 re-encode does not decode at any scale."""
+    doc = m.document
+    mime = (getattr(doc, "mime_type", "") or "").lower()
+    name = (getattr(doc, "file_name", "") or "").lower()
+    is_image = mime.startswith("image/") or name.endswith((".jpg", ".jpeg", ".png", ".webp", ".bmp"))
+    log.info("document from %s: mime=%r name=%r size=%s image=%s",
+             m.from_user.id, mime, name, getattr(doc, "file_size", "?"), is_image)
+    if not is_image:
+        return
+    if await _try_qr_download(m, state, file_id=doc.file_id):
+        return
+    # An image file that isn't a Fayda QR: say so plainly. It is not routed to the
+    # payment path — receipts are sent as photos, and silently OCR-ing a file the
+    # user meant as a QR would only produce a confusing receipt error.
+    if await fayda.active_mode(m.bot.id) == "server5":
+        await m.answer(i18n.t("qr_photo_compressed"))
+
+
+async def _try_qr_download(m: Message, state: FSMContext, file_id: str | None = None) -> bool:
+    """Is this photo a Fayda QR screenshot? If so, start a download from it.
+
+    Returns True when handled. Anything else — a payment receipt, a blurry shot, a
+    photo of a cat — returns False and the caller carries on to the receipt path,
+    so this can never swallow a payment.
+
+    The scanned QR is kept for the card: it carries the REAL signature, so the
+    finished card verifies. Rebuilding one from the identity data cannot.
+    """
+    from ..fayda import cards
+    # Server 5 ONLY. It is the one mode that draws the card itself, so it is the only
+    # one a scanned QR can reach; the others get their images from upstream. Checked
+    # first because it is the cheapest test — no file download, no subprocess.
+    mode = await fayda.active_mode(m.bot.id)
+    if mode != "server5":
+        log.info("qr: skipped, mode=%s (bot %s)", mode, m.bot.id)
+        return False
+    if not cards.available():
+        log.warning("qr: scanner unavailable — %s", cards.why_unavailable())
+        return False
+    try:
+        bio = await m.bot.download(file_id or m.photo[-1].file_id)
+        raw = bio.read()
+    except Exception as e:
+        log.warning("qr: could not download the image: %s", e)
+        return False
+    scan = await cards.scan(raw)
+    log.info("qr: %s bytes, ok=%s fan_valid=%s signed=%s %s",
+             len(raw), scan.get("ok"), scan.get("fan_valid"), scan.get("signed"),
+             ("" if scan.get("ok") else "err=" + str(scan.get("error"))[:80]))
+    if not scan.get("ok") or not scan.get("fan_valid"):
+        return False                       # not a Fayda QR → let the receipt path have it
+    fan = scan["fan"]
+    blk = await _maint_block_download(m.from_user.id)
+    if blk:
+        await m.answer(blk, reply_markup=kb.main_kb(m.from_user.id))
+        return True
+    if _should_skip(f"{m.from_user.id}:qr-scan:{fan}", 4.0):
+        return True
+    await m.answer(i18n.t("qr_read_ok", name=scan.get("full_name") or fan, fan=fan))
+    # Pin the QR to THIS id so a later typed download can't inherit it.
+    await state.update_data(qr_b64=base64.b64encode(scan["qr"]).decode() if scan.get("qr") else "",
+                            qr_fan=fan, qr_signed=bool(scan.get("signed")))
+    await _run_download(m, state, [fan], "pdf", m.from_user.id)
+    return True
 
 
 async def _ask_format(m: Message, state: FSMContext, fans: list[str], dropped: int = 0) -> None:

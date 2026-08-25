@@ -40,7 +40,13 @@ async def _load_users(ids: list[int]) -> dict:
 async def _deliver_one(camp, rec, user, buttons):
     global _pause_until
     text = personalize.render(camp["message"], user or {"telegram_id": rec["user_id"]}, camp["parse_mode"])
-    res = await notify.send_ex(rec["bot_id"], rec["user_id"], text, camp["parse_mode"], buttons)
+    # With media the text becomes the caption — one message, not two, so the user
+    # sees the picture and the words together.
+    if camp.get("media_file_id"):
+        res = await notify.send_media_ex(rec["bot_id"], rec["user_id"], camp.get("media_type"),
+                                         camp["media_file_id"], text, camp["parse_mode"], buttons)
+    else:
+        res = await notify.send_ex(rec["bot_id"], rec["user_id"], text, camp["parse_mode"], buttons)
     if res.get("ok"):
         await bc.mark(rec["id"], "sent")
     elif res.get("blocked"):

@@ -12,12 +12,14 @@ from ..db import pool
 STALE_SENDING_SECONDS = 180   # a recipient stuck 'sending' this long is reclaimed once
 
 
-async def create(title, segment, filter_json, message, parse_mode, buttons) -> int:
+async def create(title, segment, filter_json, message, parse_mode, buttons,
+                 media_type=None, media_file_id=None) -> int:
     return await pool().fetchval(
-        """INSERT INTO broadcast_campaigns (title, segment, filter_json, message, parse_mode, buttons_json, status)
-           VALUES ($1,$2,$3,$4,$5,$6,'draft') RETURNING id""",
-        title or None, segment or "all", json.dumps(filter_json or {}),
-        message, parse_mode, json.dumps(buttons or []))
+        """INSERT INTO broadcast_campaigns (title, segment, filter_json, message, parse_mode,
+                                            buttons_json, media_type, media_file_id, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft') RETURNING id""",
+        title, segment, json.dumps(filter_json or {}),
+        message, parse_mode, json.dumps(buttons or []), media_type, media_file_id)
 
 
 async def snapshot(campaign_id: int, recipients: list[tuple]) -> int:

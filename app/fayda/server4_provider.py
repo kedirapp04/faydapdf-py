@@ -315,6 +315,44 @@ async def _init_esignet(http: aiohttp.ClientSession, authorize_url: str, spoof_i
     return {"xsrf": xsrf, "oauth_details": details, "oauth_hash": _hash_oauth_details(details), "transaction_id": txn, "spoof_ip": spoof_ip}
 
 
+class EsignetError(RuntimeError):
+    """An error eSignet itself reported (bad OTP, expired transaction, …). Carries a
+    message meant for the user, so callers surface it as-is instead of wrapping it in
+    a generic 'verify failed'."""
+
+
+async def esignet_auth_code(http: aiohttp.ClientSession, sess: dict, individual: str, otp: str) -> str:
+    """OTP → authorization code. Shared by Server 4 and Server 5, which run the exact
+    same eSignet exchange and must not drift apart.
+
+    authenticate is deliberately v2: eSignet exposes v3, but its UI wires v3 only to
+    password auth — OTP stays on v2.
+    """
+    body = {"requestTime": _iso(), "request": {
+        "transactionId": sess["transaction_id"], "individualId": individual,
+        "challengeList": [{"authFactorType": "OTP", "challenge": otp, "format": "alpha-numeric"}]}}
+    async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/v2/authenticate",
+                         headers=_esignet_headers(sess), json=body) as r:
+        ad = await _json_step(r, "authenticate(OTP)")
+    if _esignet_error(ad):
+        raise EsignetError(_esignet_error(ad))
+    details = sess["oauth_details"]
+    accepted = list(details.get("essentialClaims") or []) + list(details.get("voluntaryClaims") or [])
+    accepted = sorted(set(x for x in accepted if x))
+    body = {"requestTime": _iso(), "request": {
+        "transactionId": sess["transaction_id"], "acceptedClaims": accepted,
+        "permittedAuthorizeScopes": []}}
+    async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/auth-code",
+                         headers=_esignet_headers(sess), json=body) as r:
+        cd = await _json_step(r, "auth-code")
+    if _esignet_error(cd):
+        raise EsignetError(_esignet_error(cd))
+    code = _payload(cd).get("code")
+    if not code:
+        raise EsignetError("eSignet returned no authorization code.")
+    return code
+
+
 async def _json_step(r, step: str):
     """Parse a Fayda JSON response, or raise a message that says WHICH step failed and what
     actually came back. Without this an empty/HTML reply surfaced to the user as the useless
@@ -361,7 +399,8 @@ class Server4Provider(FaydaProvider):
             return ok(session=sid, masked_mobile=masked)
         except Exception as e:
             await http.close()
-            return err(f"Server-4 send-OTP failed: {e}")
+            print("[server4] send-otp failed:", e)
+            return err("Couldn't send the OTP — please try again.")
 
     async def verify_pdf(self, session, otp: str) -> dict:
         st = _SESSIONS.pop(str(session), None)
@@ -369,29 +408,7 @@ class Server4Provider(FaydaProvider):
             return err("Session expired — send the FIN again.")
         http, sess, pkce, state, individual = st["http"], st["sess"], st["pkce"], st["state"], st["individual"]
         try:
-            # authenticate(OTP)
-            body = {"requestTime": _iso(), "request": {
-                "transactionId": sess["transaction_id"], "individualId": individual,
-                "challengeList": [{"authFactorType": "OTP", "challenge": otp, "format": "alpha-numeric"}]}}
-            async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/v2/authenticate",
-                                headers=_esignet_headers(sess), json=body) as r:
-                ad = await _json_step(r, "authenticate(OTP)")
-            if _esignet_error(ad):
-                return err(_esignet_error(ad))
-            details = sess["oauth_details"]
-            accepted = list(details.get("essentialClaims") or []) + list(details.get("voluntaryClaims") or [])
-            accepted = sorted(set(x for x in accepted if x))
-            # auth-code
-            body = {"requestTime": _iso(), "request": {
-                "transactionId": sess["transaction_id"], "acceptedClaims": accepted, "permittedAuthorizeScopes": []}}
-            async with http.post(f"{config.ESIGNET_BASE}/v1/esignet/authorization/auth-code",
-                                headers=_esignet_headers(sess), json=body) as r:
-                cd = await _json_step(r, "auth-code")
-            if _esignet_error(cd):
-                return err(_esignet_error(cd))
-            code = _payload(cd).get("code")
-            if not code:
-                return err("eSignet returned no authorization code.")
+            code = await esignet_auth_code(http, sess, individual, otp)
             # callback with a FRESH single-use token. Try both endpoint shapes (like
             # faydapdf-railway) and VALIDATE the response actually carries person data —
             # otherwise we'd deliver a blank template and (worse) charge for it.
@@ -429,8 +446,11 @@ class Server4Provider(FaydaProvider):
             except Exception as e:
                 print("[screenshot_render]", e)
             return ok(pdf=pdf_bytes, filename=f"{name}.pdf", screenshots=shots)
+        except EsignetError as e:
+            return err(str(e))          # eSignet's own wording ("Invalid OTP", …)
         except Exception as e:
-            return err(f"Server-4 verify failed: {e}")
+            print("[server4] verify failed:", e)
+            return err("Couldn't complete the download — please try again.")
         finally:
             await http.close()
 

@@ -1,0 +1,16 @@
+{
+  "name": "fayda-cards-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-5 QR scanner + card generator. Scans a Telebirr/National-ID QR screenshot and draws the ID cards. Verbatim reuse of the Node bot's modules.",
+  "main": "cards.js",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "@zxing/library": "^0.21.3",
+    "bwip-js": "^4.10.1",
+    "cbor": "^10.0.12",
+    "jimp": "^1.6.0",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  }
+}

@@ -13,7 +13,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, UploadFile, File
 from fastapi.responses import HTMLResponse
 
 from . import config, fayda, notify, i18n
@@ -144,7 +144,8 @@ async def api_stats():
     d["bots"] = [
         {"id": bid, "username": config.BOT_USERNAMES.get(bid, ""),
          "primary": bid == config.bot_id_of(config.BOT_TOKEN),
-         "mode": await _safe(fayda.bot_mode_override(bid), "")}   # '' = follows global
+         "mode": await _safe(fayda.bot_mode_override(bid), ""),   # '' = follows global
+         "allow_fan": await _safe(fayda.allow_typed_fan(bid), False)}
         for bid in config.BOT_REGISTRY
     ]
     d["paused"] = await _safe(settings_repo.get_bool("paused", False), False)
@@ -179,6 +180,12 @@ async def api_stats():
     d["s4_token_source"] = await _safe(settings_repo.get("s4_token_source"), "pool") or "pool"
     d["s4_ip_spoof"] = await _safe(settings_repo.get_bool("s4_ip_spoof", True), True)
     d["relay_proxy_url"] = await _safe(settings_repo.get("relay_proxy_url"), "") or ""
+    d["resident_basic_auth"] = await _safe(settings_repo.get("resident_basic_auth"), "") or ""
+    # Server 5 draws its own cards via Node; say so plainly rather than letting the
+    # admin discover missing screenshots one download at a time.
+    from .fayda import cards as _cards
+    d["cards_ready"] = _cards.available()
+    d["cards_error"] = _cards.why_unavailable()
     d["broadcast_via_main"] = await _safe(settings_repo.get_bool("broadcast_via_main", False), False)
     d["vp_base_url"] = await _safe(payment_verify.vp_base_url(), "") or ""
     d["vp_api_key"] = await _safe(payment_verify.vp_api_key(), "") or ""
@@ -632,6 +639,67 @@ async def api_broadcast_count(segment: str = "all", tag: str = "", exclude_tag: 
         f"SELECT count(*)::int FROM users WHERE ({where}) AND COALESCE(is_blocked,false)=false", *args), 0)}
 
 
+@app.post("/api/broadcast/upload", dependencies=[Depends(require_admin)])
+async def api_broadcast_upload(file: UploadFile = File(...)):
+    """Attach media to a broadcast.
+
+    The file is uploaded to Telegram ONCE here and only its file_id is kept; every
+    recipient is then sent that id, so a 5 MB video is transferred once, not once
+    per user.
+
+    It is uploaded by sending it to the admin's own chat — which doubles as a
+    preview of exactly what users will receive. A file_id belongs to the bot that
+    created it, so this pins the campaign to the primary bot (see the note in
+    notify.send_media_ex).
+    """
+    admin_chat = next(iter(config.ADMIN_IDS), None)
+    if not admin_chat:
+        raise HTTPException(400, "ADMIN_IDS is not configured — nowhere to upload the file")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "empty file")
+    if len(raw) > 45 * 1024 * 1024:          # Telegram's bot upload ceiling is 50 MB
+        raise HTTPException(400, f"file is {len(raw) // 1048576} MB — the limit is 45 MB")
+    mime = (file.content_type or "").lower()
+    name = (file.filename or "file").lower()
+    if mime.startswith("image/") and not name.endswith(".gif"):
+        kind = "photo"
+    elif mime.startswith("video/"):
+        kind = "video"
+    elif mime.startswith("audio/"):
+        kind = "audio"
+    elif name.endswith(".gif"):
+        kind = "animation"
+    else:
+        kind = "document"
+    method, key = notify.MEDIA_METHODS[kind]
+
+    import aiohttp
+    form = aiohttp.FormData()
+    form.add_field("chat_id", str(admin_chat))
+    form.add_field("caption", f"📎 Broadcast attachment: {file.filename}")
+    form.add_field(key, raw, filename=file.filename or kind,
+                   content_type=file.content_type or "application/octet-stream")
+    token = config.BOT_TOKEN
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=180)) as s:
+            async with s.post(f"https://api.telegram.org/bot{token}/{method}", data=form) as r:
+                d = await r.json(content_type=None)
+    except Exception as e:
+        raise HTTPException(502, f"upload to Telegram failed: {type(e).__name__}")
+    if not d.get("ok"):
+        raise HTTPException(502, str(d.get("description") or "Telegram rejected the upload")[:200])
+    msg = d.get("result") or {}
+    got = msg.get(key)
+    if isinstance(got, list):                 # sendPhoto returns every size
+        got = got[-1]                         # the largest
+    file_id = (got or {}).get("file_id")
+    if not file_id:
+        raise HTTPException(502, "Telegram returned no file_id")
+    return {"ok": True, "media_type": kind, "file_id": file_id,
+            "filename": file.filename, "size": len(raw)}
+
+
 @app.post("/api/broadcast", dependencies=[Depends(require_admin)])
 async def api_broadcast(request: Request):
     """Create a persistent campaign: snapshot recipients now, the delivery worker
@@ -639,8 +707,12 @@ async def api_broadcast(request: Request):
     the segment/filters select the audience and bot-blocked users are excluded."""
     body = await request.json()
     text = str(body.get("text") or "").strip()
-    if not text:
+    media_type = str(body.get("media_type") or "").strip() or None
+    media_file_id = str(body.get("media_file_id") or "").strip() or None
+    if not text and not media_file_id:
         raise HTTPException(400, "empty message")
+    if media_file_id and media_type not in notify.MEDIA_METHODS:
+        raise HTTPException(400, f"unknown media type {media_type!r}")
     parse_mode = body.get("parse_mode") if body.get("parse_mode") in ("HTML", "Markdown", "MarkdownV2") else None
     buttons = [{"text": str(b.get("text") or "").strip(), "url": str(b.get("url") or "").strip()}
                for b in (body.get("buttons") or []) if b.get("text") and b.get("url")][:6]
@@ -658,11 +730,15 @@ async def api_broadcast(request: Request):
         where, args = _bcast_filter(segment, extra)
         rows = await pool().fetch(
             f"SELECT telegram_id, last_bot_id FROM users WHERE ({where}) AND COALESCE(is_blocked,false)=false", *args)
-    cid = await broadcast_repo.create(title, segment, extra, text, parse_mode, buttons)
+    cid = await broadcast_repo.create(title, segment, extra, text, parse_mode, buttons,
+                                      media_type, media_file_id)
     # broadcast_via_main: force EVERY recipient through the primary bot (config.BOT_TOKEN,
     # e.g. @NID_downloader_bot) instead of each user's last_bot_id. Only reaches users who
     # started the main bot (Telegram rule), but guarantees one consistent sender.
-    via_main = await settings_repo.get_bool("broadcast_via_main", False)
+    # A file_id only works for the bot that uploaded it, so a media campaign MUST go
+    # out through the primary bot regardless of the setting — otherwise every
+    # recipient on another bot would fail with "wrong file identifier".
+    via_main = bool(media_file_id) or await settings_repo.get_bool("broadcast_via_main", False)
     main_bid = config.bot_id_of(config.BOT_TOKEN)
     recips = [(r["telegram_id"], main_bid if via_main else r["last_bot_id"]) for r in rows]
     n = await broadcast_repo.snapshot(cid, recips)
@@ -824,6 +900,12 @@ async def api_settings(request: Request):
     body = await request.json()
     if "mode" in body:
         await fayda.set_mode(str(body["mode"]))
+    if "bot_fan" in body:    # Server 5: may this bot accept a TYPED FAN?
+        bf = body["bot_fan"] or {}
+        try:
+            await fayda.set_allow_typed_fan(int(bf.get("bot_id")), bool(bf.get("allow")))
+        except (TypeError, ValueError):
+            pass
     if "bot_mode" in body:   # per-bot download-mode override ({"bot_id":.., "mode":..})
         bm = body["bot_mode"] or {}
         try:
@@ -860,7 +942,7 @@ async def api_settings(request: Request):
     if "pdf_filename_suffix" in body:
         await settings_repo.set("pdf_filename_suffix", str(body["pdf_filename_suffix"] or "").strip())
     for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "s4_token_source",
-               "vp_base_url", "vp_api_key", "relay_proxy_url"):
+               "vp_base_url", "vp_api_key", "relay_proxy_url", "resident_basic_auth"):
         if _k in body:
             await settings_repo.set(_k, str(body[_k] or "").strip())
     if "s4_ip_spoof" in body:

@@ -113,7 +113,7 @@ async def cb_mode(c: CallbackQuery):
     if not config.is_admin(c.from_user.id):
         return await c.answer("Admins only")
     cur = await fayda.active_mode()
-    # cycle api → server4 → proxy → api
+    # cycle api → server4 → proxy → server5 → api
     order = fayda.MODES
     nxt = order[(order.index(cur) + 1) % len(order)] if cur in order else "api"
     new = await fayda.set_mode(nxt)

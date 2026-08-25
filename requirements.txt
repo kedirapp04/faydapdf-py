@@ -8,3 +8,7 @@ reportlab==4.2.5
 Pillow==11.0.0
 pypdf==5.1.0
 pytesseract==0.3.13
+# Required by FastAPI for file uploads (broadcast media). FastAPI raises at
+# ROUTE-DEFINITION time when File(...) is used without it, so a missing entry
+# crashes the whole app at startup, not just the upload endpoint.
+python-multipart==0.0.21

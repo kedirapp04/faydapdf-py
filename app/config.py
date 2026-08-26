@@ -83,6 +83,31 @@ RESIDENT_OTP_CHANNELS = [c.strip() for c in
 # Phase 5 downloads ~3 MB; never let it inherit a short timeout.
 RESIDENT_TIMEOUT_S = _int("RESIDENT_TIMEOUT_S", 45)
 
+# ── Server 6 — FaydaPass / VeriFayda 2.0 (OpenID4VCI on pass.fayda.et) ───────
+# A public PKCE client: no App Check token, no secret. Runs the full OID4VCI
+# issuance and receives an SD-JWT verifiable credential. Defaults match the live
+# FaydaPass app (v1.1.18); all overridable via env.
+PASS_ESIGNET_BASE = (os.getenv("PASS_ESIGNET_BASE") or "https://auth.pass.fayda.et").rstrip("/")
+PASS_ECOSYSTEM_BASE = (os.getenv("PASS_ECOSYSTEM_BASE") or "https://ecosystem.pass.fayda.et").rstrip("/")
+PASS_CERTIFY_BASE = (os.getenv("PASS_CERTIFY_BASE") or "https://certify.pass.fayda.et").rstrip("/")
+PASS_CLIENT_ID = (os.getenv("PASS_CLIENT_ID")
+                  or "ANm99QrPxHKVWhs798uMzmFwxlGpOR37Br3e2RqQebM").strip()
+PASS_REDIRECT_URI = (os.getenv("PASS_REDIRECT_URI")
+                     or "io.mosip.residentapp.inji://oauthredirect").strip()
+PASS_SCOPE = (os.getenv("PASS_SCOPE") or "mosip_identity_vc_ldp").strip()
+PASS_VCT = (os.getenv("PASS_VCT") or "FaydaDigitalCredential").strip()
+# The token endpoint is the Mimoto proxy; the credential endpoint is the issuer.
+PASS_TOKEN_ENDPOINT = (os.getenv("PASS_TOKEN_ENDPOINT")
+                       or "https://ecosystem.pass.fayda.et/v1/mimoto/get-token/Fayda").strip()
+PASS_CREDENTIAL_ENDPOINT = (os.getenv("PASS_CREDENTIAL_ENDPOINT")
+                            or "https://certify.pass.fayda.et/v1/certify/issuance/credential").strip()
+# The proof JWT's `aud` (holder binding). The credential issuer host.
+PASS_PROOF_AUDIENCE = (os.getenv("PASS_PROOF_AUDIENCE") or "https://certify.pass.fayda.et").strip()
+PASS_OTP_CHANNELS = [c.strip() for c in
+                     (os.getenv("PASS_OTP_CHANNELS") or "phone").split(",") if c.strip()]
+# The credential (~60 KB with photo) can be slow; never inherit a short timeout.
+PASS_TIMEOUT_S = _int("PASS_TIMEOUT_S", 45)
+
 # Download mode 'proxy': the Server-4 flow sent out through this CONNECT proxy, so
 # Fayda sees the proxy's IP. Admin-overridable (settings key `relay_proxy_url`).
 # Form: http://user:pass@HOST:PORT

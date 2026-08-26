@@ -12,3 +12,7 @@ pytesseract==0.3.13
 # ROUTE-DEFINITION time when File(...) is used without it, so a missing entry
 # crashes the whole app at startup, not just the upload endpoint.
 python-multipart==0.0.21
+# Required by Server 6 (FaydaPass VC) for the ES256 holder-binding proof JWT.
+# Imported at startup by app/fayda/pass_provider.py, so a missing entry crashes
+# the whole app on Railway (as python-multipart once did) — declare it explicitly.
+cryptography==42.0.5

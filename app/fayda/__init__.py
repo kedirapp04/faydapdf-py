@@ -9,14 +9,19 @@
   'server5' — the resident-portal identity path (api-resident.fayda.et). Same
               eSignet OTP exchange, different identity source, and it spends NO
               App Check pool token. 16-digit FAN only.
+  'server6' — FaydaPass / VeriFayda 2.0 (OpenID4VCI on pass.fayda.et). Runs the
+              full VC issuance and parses the SD-JWT credential. Public PKCE
+              client (no token, no secret). Accepts a 12-digit FIN or 16-digit
+              FAN. English only.
 """
 from .. import config
 from ..repo import settings as settings_repo
 from .api_provider import ApiProvider
 from .server4_provider import Server4Provider
 from .resident_provider import Server5Provider
+from .pass_provider import Server6Provider
 
-MODES = ("api", "server4", "proxy", "server5")
+MODES = ("api", "server4", "proxy", "server5", "server6")
 
 _providers = {}
 
@@ -29,6 +34,8 @@ def _norm(mode) -> str:
 def _make(mode: str):
     if mode == "server5":
         return Server5Provider()
+    if mode == "server6":
+        return Server6Provider()
     # 'proxy' is Server-4 with a different exit IP — same flow, same provider class.
     if mode in ("server4", "proxy"):
         return Server4Provider()

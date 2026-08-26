@@ -234,7 +234,7 @@
     <h2>⚙️ Billing & settings</h2>
     <div class="row">
       <span class="muted">Download mode:</span>
-      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option><option value="server5">Server 5 (resident portal)</option></select>
+      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option><option value="server5">Server 5 (resident portal)</option><option value="server6">Server 6 (FaydaPass VC)</option></select>
       <span class="muted" style="margin-left:12px">Service:</span><button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
       <span class="muted" style="margin-left:12px">DB:</span><span id="dbStat" class="tag">…</span>
       <select id="dbPolicy" onchange="saveSet({db_down_policy:this.value})"><option value="refuse">DB down: Refuse</option><option value="free">DB down: Serve free</option><option value="fallback">DB down: Fallback</option></select>
@@ -576,14 +576,14 @@ function renderCards(s){
   $("#cards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 }
 function renderBilling(s){
-  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy","server5"].indexOf(s.mode)>=0?s.mode:"api";
+  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy","server5","server6"].indexOf(s.mode)>=0?s.mode:"api";
   const bm=$("#botModes");
   if(bm&&Array.isArray(s.bots)){bm.innerHTML=s.bots.map(b=>{
     const label=(b.username?("@"+b.username):("bot "+b.id))+(b.primary?' <span class="tag">primary</span>':"");
     const opt=(v,t)=>`<option value="${v}"${(b.mode||"")===v?" selected":""}>${t}</option>`;
     return `<span class="row" style="gap:6px"><span class="muted" style="min-width:210px">${label}</span>`+
       `<select onchange='saveSet({bot_mode:{bot_id:${b.id},mode:this.value}})'>`+
-      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+opt("server5","Server 5 (resident portal)")+
+      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+opt("server5","Server 5 (resident portal)")+opt("server6","Server 6 (FaydaPass VC)")+
       `</select><label class="chk" title="Server 5 only. ON: a typed FAN is accepted and the QR is BUILT from the user's data — the card is complete but its QR will NOT pass verification. OFF: the user must send their Telebirr QR screenshot, and the card carries their real, verifiable QR.">`+
       `<input type="checkbox" ${b.allow_fan?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},allow:this.checked}})'> accept FAN (build QR)</label></span>`;
   }).join("");}

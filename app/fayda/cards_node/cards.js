@@ -41,49 +41,49 @@ const b64 = (v) => (Buffer.isBuffer(v) ? v.toString('base64') : (v || null));
 
 async function doScan(input) {
   const image = Buffer.from(input.image || '', 'base64');
-  // Legacy first — it is the cheaper decoder and still the common case. The
-  // National ID app now also issues a COSE_Sign1 QR that jsQR cannot read at all,
-  // so fall through to the zxing/CBOR path rather than calling it unreadable.
-  let legacyErr = null;
+  const { scanBytes, isCoseSign1, fanFromCose } = require('./qrScanNew');
+  const { decodeLegacyQr, isLegacyQrText, regenerateQrPng } = require('./faydaQrScanner');
+
+  // ONE decode pass (zxing) then branch on the payload. zxing reads BOTH the dense
+  // new-format COSE QR AND the legacy text QR, so this replaces the old two-scanner
+  // sequence (jsQR then zxing) that was slow enough to risk the caller's timeout.
+  let hit = null;
   try {
-    const scan = await scanFaydaQr(image);
-    return {
-      ok: true,
-      qrType: 'old',
-      fan: scan.fan,
-      fanValid: scan.fanValid,
-      fullName: scan.fullName,
-      birthDate: scan.birthDate,
-      gender: scan.gender,
-      version: scan.version,
-      // Present and non-sample => the QR came off a real ID and will verify.
-      signature: scan.signature ? scan.signature.slice(0, 24) : '',
-      signed: Boolean(scan.signature) && !/INVALID_SIGNATURE_SAMPLE/.test(scan.signature),
-      qr: scan.regeneratedQr,
-    };
-  } catch (e) {
-    legacyErr = e;
+    hit = await scanBytes(image);
+  } catch (_) { /* nothing decoded — handled below */ }
+
+  if (hit && hit.bytes && hit.bytes.length) {
+    // New format: COSE_Sign1 CWT. The 16-digit FAN is CWT claim 2; the QR is
+    // rebuilt from the ORIGINAL bytes so its Fayda signature survives.
+    if (isCoseSign1(hit.bytes)) {
+      try {
+        const fan = fanFromCose(hit.bytes);
+        const QRCode = require('qrcode');
+        const png = await QRCode.toBuffer([{ data: hit.bytes, mode: 'byte' }],
+          { errorCorrectionLevel: 'L', type: 'png', margin: 2, scale: 4 });
+        return { ok: true, qrType: 'new', fan, fanValid: true, signed: true,
+                 via: hit.via, qr: png.toString('base64') };
+      } catch (_) { /* not a valid CWT after all — try legacy text below */ }
+    }
+    // Legacy format: colon-separated text with :DLT: / :SIGN:.
+    const text = hit.bytes.toString('latin1');
+    if (isLegacyQrText(text)) {
+      const dec = decodeLegacyQr(text);
+      const png = await regenerateQrPng(dec.rawText);
+      return { ok: true, qrType: 'old', fan: dec.fan, fanValid: dec.fanValid,
+               fullName: dec.fullName, birthDate: dec.birthDate, gender: dec.gender,
+               version: dec.version,
+               signature: dec.signature ? dec.signature.slice(0, 24) : '',
+               signed: Boolean(dec.signature) && !/INVALID_SIGNATURE_SAMPLE/.test(dec.signature),
+               qr: png.toString('base64') };
+    }
   }
-  const { scanNewFaydaQr } = require('./qrScanNew');
-  try {
-    const scan = await scanNewFaydaQr(image);
-    return {
-      ok: true,
-      qrType: 'new',
-      fan: scan.fan,
-      fanValid: scan.fanValid,
-      fullName: '',
-      birthDate: '',
-      gender: '',
-      signed: true,
-      via: scan.via,
-      qr: scan.regeneratedQrBuffer.toString('base64'),
-    };
-  } catch (e) {
-    // Report the legacy reason: for a photo that holds no QR at all it is the
-    // more useful message, and the new-format attempt failed for the same cause.
-    throw legacyErr || e;
-  }
+
+  // Nothing usable. zxing already covers both formats (it decodes the legacy text
+  // QR too, handled above), so there is no jsQR fallback — it only added ~12 slow
+  // attempts to the failure path, which matters when a plain receipt photo reaches
+  // here in QR mode: it now fails in a few seconds, not ~50.
+  return { ok: false, error: 'No QR code could be decoded from the image.' };
 }
 
 async function doCards(data) {

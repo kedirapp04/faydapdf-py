@@ -235,6 +235,7 @@ async function scanFaydaQr(image) {
 module.exports = {
   scanFaydaQr,
   decodeLegacyQr,
+  isLegacyQrText,
   regenerateQrPng,
   resolveImageBuffer,
 };

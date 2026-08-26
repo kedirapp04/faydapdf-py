@@ -288,10 +288,15 @@ def to_record(claims: dict, fallback_id: str = "") -> dict:
         email = ""
     photo = s(claims.get("picture"))
     fan = en("individual_id") or fallback_id
+    from .etdate import to_ethiopian_date
+    dob = en("birthdate")
     return {
         "fullName_eng": en("name"), "fullName_amh": am("name"),
         "gender_eng": en("gender"), "gender_amh": am("gender"),
-        "dateOfBirth_eng": en("birthdate"),
+        "dateOfBirth_eng": dob,
+        # Credential carries only the Gregorian date; compute the Ethiopian-calendar
+        # form for the card's Amharic-font DOB line.
+        "dateOfBirth_et": to_ethiopian_date(dob),
         "citizenship_Eng": "Ethiopian", "citizenship_amh": "ኢትዮጵያዊ",
         "phone": en("phone_number"),
         "email": email,

@@ -30,7 +30,7 @@ const cbor = require('cbor');
 const QRCode = require('qrcode');
 const {
   MultiFormatReader, BarcodeFormat, RGBLuminanceSource, BinaryBitmap,
-  HybridBinarizer, DecodeHintType, ResultMetadataType,
+  HybridBinarizer, GlobalHistogramBinarizer, DecodeHintType, ResultMetadataType,
 } = require('@zxing/library');
 
 const COSE_SIGN1_TAG = 18;
@@ -53,11 +53,13 @@ function readerHints() {
 }
 
 // Returns the raw BYTE payload (not getText(), which mangles binary through a
-// charset conversion), or null.
-function decodeBytes(img) {
+// charset conversion), or null. `Bin` selects the binarizer — different
+// screenshots binarize cleanly under different ones (Hybrid vs GlobalHistogram),
+// so we try both.
+function decodeBytes(img, Bin) {
   const reader = new MultiFormatReader();
   reader.setHints(readerHints());
-  const result = reader.decode(new BinaryBitmap(new HybridBinarizer(luminance(img))));
+  const result = reader.decode(new BinaryBitmap(new Bin(luminance(img))));
   const segments = result.getResultMetadata().get(ResultMetadataType.BYTE_SEGMENTS);
   if (segments && segments.length) {
     return Buffer.concat(segments.map((s) => Buffer.from(s)));
@@ -65,26 +67,41 @@ function decodeBytes(img) {
   return Buffer.from(result.getText(), 'latin1');
 }
 
-// Native resolution often fails while 2x succeeds — the dense modules need more
-// pixels for the binarizer to separate them. Try a spread, cheapest first.
+// The dense new-format QR is sensitive to scale, binarizer AND framing, and real
+// screenshots vary a lot (full-res files, Telegram-compressed photos). Each
+// (prep, binarizer) pair below is an ordered guess with cheap ones first; the
+// list is tuned so every real capture seen so far decodes within the first few.
+//
+//   * A TIGHT crop to the QR band + x2 is what rescues compressed photos — the
+//     National ID screen always puts the QR under the photo, roughly this box.
+//   * x3+ is excluded on purpose: multi-second per try, little extra reach, and it
+//     risks the caller's timeout. Bounded work means a real failure returns fast
+//     (so the user gets the "send as a File" advice quickly) instead of hanging.
 async function scanBytes(buffer) {
   const base = await Jimp.read(buffer);
   const W = base.bitmap.width;
   const H = base.bitmap.height;
+  const crop = (b) => b.crop({ x: Math.round(W * 0.08), y: Math.round(H * 0.42),
+                               w: Math.round(W * 0.84), h: Math.round(H * 0.42) });
+  const cropW = Math.round(W * 0.84);
+  const H_ = HybridBinarizer;
+  const G_ = GlobalHistogramBinarizer;
+  // [name, prep, binarizer] — winners for every real capture seen so far are all
+  // in this set (each of the 4 known screenshots decodes on one of these), so the
+  // whole-image x2 attempts were dropped: they never won uniquely and only slowed
+  // the failure path.
   const attempts = [
-    ['x2', (b) => b.resize({ w: W * 2 })],
-    ['native', (b) => b],
-    ['x3', (b) => b.resize({ w: W * 3 })],
-    ['x2 grey', (b) => b.greyscale().resize({ w: W * 2 })],
-    // The National ID screen puts the QR in the middle band, under the photo.
-    ['band x2', (b) => b.crop({ x: 0, y: Math.round(H * 0.30), w: W, h: Math.round(H * 0.55) })
-      .resize({ w: W * 2 })],
+    ['native/hybrid',   (b) => b, H_],
+    ['crop/hybrid',     crop, H_],
+    ['crop/global',     crop, G_],
+    ['crop x2/hybrid',  (b) => crop(b).resize({ w: cropW * 2 }), H_],
+    ['crop x2/global',  (b) => crop(b).resize({ w: cropW * 2 }), G_],
   ];
-  for (const [name, prep] of attempts) {
+  for (const [name, prep, Bin] of attempts) {
     try {
-      const bytes = decodeBytes(prep(base.clone()));
+      const bytes = decodeBytes(prep(base.clone()), Bin);
       if (bytes && bytes.length) return { bytes, via: name };
-    } catch (_) { /* this variant didn't decode — try the next */ }
+    } catch (_) { /* try the next attempt */ }
   }
   return null;
 }

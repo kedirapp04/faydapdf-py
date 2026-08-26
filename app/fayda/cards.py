@@ -15,7 +15,12 @@ import base64
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
+
+# On Windows, spawning the console app node.exe pops a terminal window every time.
+# CREATE_NO_WINDOW keeps it hidden. No-op / absent off Windows.
+_NO_WINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 
 _DIR = Path(__file__).parent / "cards_node"
 _ENTRY = _DIR / "cards.js"
@@ -61,6 +66,7 @@ async def _run(payload_obj: dict, empty: dict) -> dict:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(_DIR),
+            **_NO_WINDOW,
         )
     except OSError as e:
         print("[cards] cannot start node:", e)

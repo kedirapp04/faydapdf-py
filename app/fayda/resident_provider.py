@@ -229,6 +229,7 @@ def to_record(resp: dict, fan: str) -> dict:
     g = lambda *keys: next((d[k] for k in keys if d.get(k) not in (None, "")), "")
     eng = lambda *keys: _lang(g(*keys), "eng")
     amh = lambda *keys: _lang(g(*keys), "amh")
+    from .etdate import to_ethiopian_date
     dob = str(g("dateOfBirth", "birthdate", "dob") or "").strip()
     uin = str(g("UIN", "uin", "vid", "VID") or "").strip()
     return {
@@ -237,6 +238,9 @@ def to_record(resp: dict, fan: str) -> dict:
         "gender_eng": eng("gender", "sex"),
         "gender_amh": amh("gender", "sex"),
         "dateOfBirth_eng": dob,
+        # The API gives only the Gregorian date; the card's Amharic-font DOB is the
+        # Ethiopian-calendar form, computed here (Server 4's API supplied it ready-made).
+        "dateOfBirth_et": to_ethiopian_date(dob),
         "citizenship_Eng": eng("nationality", "residenceStatus"),
         "citizenship_amh": amh("nationality", "residenceStatus"),
         "phone": str(g("phone", "phoneNumber") or "").strip(),

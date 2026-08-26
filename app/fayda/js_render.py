@@ -12,9 +12,13 @@ import base64
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 from . import pdf_render
+
+# Windows: hide the node.exe console window that otherwise flashes on every render.
+_NO_WINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
 
 _DIR = Path(__file__).parent / "js_render"
 _BUNDLE = _DIR / "render.bundle.js"
@@ -37,6 +41,7 @@ async def _render_js(user: dict) -> tuple[bytes, str]:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=str(_DIR),
+        **_NO_WINDOW,
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(payload), timeout=_TIMEOUT)

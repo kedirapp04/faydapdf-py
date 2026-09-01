@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import logging
+import os
 import re
 import time
 
@@ -28,6 +29,39 @@ FAN_RE = re.compile(r"^\d{12,16}$")
 OTP_RE = re.compile(r"^\d{6}$")   # Fayda OTPs are exactly 6 digits (a 10-digit phone is NOT one)
 PHONE_RE = re.compile(r"^(?:\+?251|0)?9\d{8}$")
 _PHONE_ANY = re.compile(r"(?:\+?251|0)?(9\d{8})")
+
+# How long the typed-FAN "unsigned QR" notice stays before it self-deletes. Long
+# enough to read while entering the OTP, then it clears itself so the chat isn't
+# left with a scary warning after the PDF arrives. Tune with UNSIGNED_NOTICE_TTL_S;
+# set it to 0 to keep the notice permanently.
+try:
+    _UNSIGNED_NOTICE_TTL = float(os.getenv("UNSIGNED_NOTICE_TTL_S") or 60)
+except ValueError:
+    _UNSIGNED_NOTICE_TTL = 60.0
+
+
+async def _send_temp(message: Message, text: str, ttl: float, parse_mode: str | None = None) -> None:
+    """Send a message and delete it after `ttl` seconds. Best-effort: a send OR
+    delete can fail (bad markup, message already gone, chat left, ttl<=0 disables)
+    and must never disrupt the download flow, so every failure is swallowed. On a
+    parse_mode send failure, retry once as plain text so the notice still shows."""
+    try:
+        sent = await message.answer(text, parse_mode=parse_mode)
+    except Exception:
+        if not parse_mode:
+            return
+        try:
+            sent = await message.answer(text)   # markup rejected → send plain
+        except Exception:
+            return
+    if ttl and ttl > 0:
+        async def _reap():
+            try:
+                await asyncio.sleep(ttl)
+                await sent.delete()
+            except Exception:
+                pass
+        asyncio.create_task(_reap())
 
 
 def _sanitize_name(raw: str) -> str:
@@ -328,10 +362,10 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
     data = await state.get_data()
     qr_b64 = data.get("qr_b64") if data.get("qr_fan") == fan else None
     if not qr_b64 and await fayda.active_mode(m.bot.id) == "server5":
-        # A typed FAN is allowed only if this bot is set to accept one. The card is
-        # still drawn, but its QR is generated from the identity data and will not
-        # pass verification — say so before charging anyone for it.
-        if not await fayda.allow_typed_fan(m.bot.id):
+        # A typed FAN is allowed only if enabled for this user / bot / generally
+        # (most-specific wins). The card is still drawn, but its QR is generated from
+        # the identity data and will not verify — say so before charging anyone.
+        if not await fayda.allow_typed_fan(m.bot.id, uid):
             await state.clear()
             return await m.answer(i18n.t("qr_required"), reply_markup=kb.main_kb(uid))
         unsigned_qr = True
@@ -366,7 +400,20 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
                            uid=uid, is_vip=bool(u.get("is_vip")))
     phone = _mask_phone(res.get("masked_mobile"))
     key = "otp_sent_to" if phone else "otp_sent"
-    await wait.edit_text(i18n.t(key, phone=phone), reply_markup=kb.cancel_kb())
+    # Typed-FAN download: the card's QR is generated, so it will not verify. Show the
+    # warning FIRST (as its own self-deleting message, so the chat isn't left with a
+    # scary notice once the PDF arrives), then the OTP prompt ~1s later — so the user
+    # reads the warning before being asked for the code. The download is never blocked.
+    if unsigned_qr:
+        try:
+            await wait.delete()          # drop the "requesting" spinner so the warning sits on top
+        except Exception:
+            pass
+        await _send_temp(m, i18n.t("unsigned_qr_notice"), _UNSIGNED_NOTICE_TTL, parse_mode="Markdown")
+        await asyncio.sleep(1)
+        await m.answer(i18n.t(key, phone=phone), reply_markup=kb.cancel_kb())
+    else:
+        await wait.edit_text(i18n.t(key, phone=phone), reply_markup=kb.cancel_kb())
 
 
 @router.message(Flow.otp, F.text)
@@ -401,12 +448,8 @@ async def on_otp(m: Message, state: FSMContext):
                 await m.answer(i18n.t("n_ids", n=len(fans)))
             return await _run_download(m, state, fans, delivery, m.from_user.id)
         return await m.answer(i18n.t("otp_enter_numeric"))
-    data = await state.get_data()
-    # Typed-FAN download: the card's QR is generated, so its signature is invalid.
-    # Tell the user plainly at OTP entry — no confirmation step, the download
-    # continues — so nobody is surprised by a PDF that fails verification.
-    if data.get("unsigned_qr"):
-        await m.answer(i18n.t("unsigned_qr_notice"))
+    # The typed-FAN "unsigned QR" notice is shown earlier, when we ASK for the OTP
+    # (see send-otp handler), as a self-deleting message — not here on submission.
     await _finish_otp(m, state, otp)
 
 
@@ -896,9 +939,8 @@ async def _try_qr_download(m: Message, state: FSMContext, file_id: str | None = 
     if mode != "server5":
         log.info("qr: skipped, mode=%s (bot %s)", mode, m.bot.id)
         return False
-    if not cards.available():
-        log.warning("qr: scanner unavailable — %s", cards.why_unavailable())
-        return False
+    # NOTE: scanning is pure Python now (no cards.available() gate) — it works even
+    # where the Node card-drawing bridge is absent. Only card IMAGES need Node.
     try:
         bio = await m.bot.download(file_id or m.photo[-1].file_id)
         raw = bio.read()

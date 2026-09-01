@@ -569,6 +569,11 @@ async def _finish_otp(m: Message, state: FSMContext, otp: str, uid=None, bot=Non
         return
     if not captioned:
         await m.answer(caption)
+    # API mode routed through the gateway's Server 5 returns a generated-QR warning
+    # (the card QR is built, not scanned, so it won't verify). Show it as a
+    # self-deleting notice, same as the native Server-5 typed-FAN path.
+    if res.get("warning"):
+        await _send_temp(m, res["warning"], _UNSIGNED_NOTICE_TTL)
     # Multi-FAN: continue with the next queued id, keeping the chosen output format.
     if queue:
         nxt_u, nxt_free = _DBDOWN_USER, db_free

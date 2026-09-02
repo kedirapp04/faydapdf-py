@@ -61,17 +61,7 @@ class ApiProvider(FaydaProvider):
                             name = unquote(hdr)
                         except Exception:
                             pass
-                    # Gateway Server-5 downloads carry a generated-QR warning (the card
-                    # QR is built, not scanned, so it won't verify). Surface it so the
-                    # handler can show it to the user.
-                    warning = ""
-                    wh = r.headers.get("X-QR-Warning")
-                    if wh:
-                        try:
-                            warning = unquote(wh)
-                        except Exception:
-                            warning = ""
-                    return ok(pdf=body, filename=f"{name}.pdf", warning=(warning or None))
+                    return ok(pdf=body, filename=f"{name}.pdf")
                 data = await r.json(content_type=None)
                 return err(str(data.get("error") or "Couldn't verify the OTP."))
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:

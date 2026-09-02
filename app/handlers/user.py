@@ -361,13 +361,19 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
     # BEFORE the billing gate and the OTP, so nothing is charged or sent.
     data = await state.get_data()
     qr_b64 = data.get("qr_b64") if data.get("qr_fan") == fan else None
-    if not qr_b64 and await fayda.active_mode(m.bot.id) == "server5":
+    _mode = await fayda.active_mode(m.bot.id)
+    if not qr_b64 and _mode == "server5":
         # A typed FAN is allowed only if enabled for this user / bot / generally
         # (most-specific wins). The card is still drawn, but its QR is generated from
         # the identity data and will not verify — say so before charging anyone.
         if not await fayda.allow_typed_fan(m.bot.id, uid):
             await state.clear()
             return await m.answer(i18n.t("qr_required"), reply_markup=kb.main_kb(uid))
+        unsigned_qr = True
+    elif _mode == "api":
+        # API mode routes through the gateway, which runs Server 5 (the card QR is
+        # generated, not scanned, so it won't verify). Warn at OTP entry — same
+        # notice, same timing as the native Server-5 typed-FAN path.
         unsigned_qr = True
     else:
         unsigned_qr = False
@@ -569,11 +575,8 @@ async def _finish_otp(m: Message, state: FSMContext, otp: str, uid=None, bot=Non
         return
     if not captioned:
         await m.answer(caption)
-    # API mode routed through the gateway's Server 5 returns a generated-QR warning
-    # (the card QR is built, not scanned, so it won't verify). Show it as a
-    # self-deleting notice, same as the native Server-5 typed-FAN path.
-    if res.get("warning"):
-        await _send_temp(m, res["warning"], _UNSIGNED_NOTICE_TTL)
+    # (The generated-QR warning for API/Server-5 downloads is shown earlier, at the
+    # OTP-ask stage — see the send-otp handler — not here on delivery.)
     # Multi-FAN: continue with the next queued id, keeping the chosen output format.
     if queue:
         nxt_u, nxt_free = _DBDOWN_USER, db_free

@@ -18,9 +18,13 @@ Logic ported from fayda-ocr-api/qr_decoder.py.
 import io
 import re
 
-import cv2
 import numpy as np
 import zxingcpp
+
+try:                                   # OpenCV needs system libs (libGL/libgthread)
+    import cv2                         # that minimal hosts (Railway) may lack. Pillow
+except Exception:                      # covers image loading + upscaling, and zxing-cpp
+    cv2 = None                         # is the primary decoder — so cv2 is optional.
 
 try:                                   # optional: a second engine, needs libzbar
     from pyzbar.pyzbar import decode as _zbar_decode
@@ -38,18 +42,40 @@ _SAMPLE_SIG = re.compile(r"INVALID_SIGNATURE_SAMPLE")
 
 
 # ── decode the raw payload from the image ────────────────────────────────────
+def _load_image(image_bytes: bytes):
+    """Decode the screenshot to a numpy image array — cv2 when present, else Pillow.
+    zxing-cpp reads either colour order (it greyscales internally), so BGR vs RGB
+    doesn't matter for QR detection."""
+    if cv2 is not None:
+        arr = np.frombuffer(image_bytes, np.uint8)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    try:
+        from PIL import Image
+        return np.asarray(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
+    except Exception:
+        return None
+
+
+def _upscale(img, scale: int):
+    if scale == 1:
+        return img
+    if cv2 is not None:
+        return cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    from PIL import Image
+    pil = Image.fromarray(img)
+    return np.asarray(pil.resize((pil.width * scale, pil.height * scale)))
+
+
 def _read_payload(image_bytes: bytes):
     """Return the decoded QR payload as (bytes, text) — either may be None — or
     (None, None) if nothing decodes. Upscales a little for small/compressed shots."""
-    arr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    img = _load_image(image_bytes)
     if img is None:
         return None, None
 
     scales = (1, 2, 3)
     for scale in scales:
-        im = img if scale == 1 else cv2.resize(img, None, fx=scale, fy=scale,
-                                               interpolation=cv2.INTER_CUBIC)
+        im = _upscale(img, scale)
         # zxing-cpp: gives clean bytes for a byte-mode QR (the COSE case).
         try:
             for r in zxingcpp.read_barcodes(im) or []:
@@ -78,14 +104,15 @@ def _read_payload(image_bytes: bytes):
                 except UnicodeDecodeError:
                     return data, None
 
-    # OpenCV last (text only).
-    try:
-        det = cv2.QRCodeDetector()
-        single, _, _ = det.detectAndDecode(img)
-        if single:
-            return None, single
-    except Exception:
-        pass
+    # OpenCV last (text only) — only when cv2 is actually available.
+    if cv2 is not None:
+        try:
+            det = cv2.QRCodeDetector()
+            single, _, _ = det.detectAndDecode(img)
+            if single:
+                return None, single
+        except Exception:
+            pass
     return None, None
 
 

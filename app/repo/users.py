@@ -106,6 +106,10 @@ SQL_REAL_MONEY = f"(balance_cents + balance_new_cents - {SQL_LEGACY_LEFT})"
 SQL_ANY_BALANCE = "(balance_cents + balance_new_cents) > 0"
 
 MONEY_COHORTS: dict[str, str] = {
+    # The three balance-view cohorts: users holding a positive balance in each basis.
+    "has_gross":    "(balance_cents + balance_new_cents + bonus_balance_cents) > 0",  # incl. bonus
+    "has_nowallet": "(balance_cents + balance_new_cents) > 0",                        # without bonus wallet
+    "has_net":      f"({SQL_HAS_PAID} AND {SQL_REAL_MONEY} > 0)",                     # without any bonus
     "old_balance":  "balance_cents > 0",
     "new_balance":  "balance_new_cents > 0",
     "both_wallets": "balance_cents > 0 AND balance_new_cents > 0",
@@ -117,12 +121,49 @@ MONEY_COHORTS: dict[str, str] = {
     "empty":        f"NOT {SQL_ANY_BALANCE} AND bonus_balance_cents = 0",
 }
 
+# Three balance bases the admin can sort / filter / total by. All are interpolated
+# into SQL, so they MUST come from these constants, never from raw input.
+#   gross    — everything spendable: old + new + separate bonus wallet
+#   nowallet — without the separate bonus wallet (old + new)
+#   net      — no bonus at all (real money): the legacy bonus baked into balance is
+#              removed, and a user who never paid counts as 0 (their whole balance is
+#              promotional). Matches the dashboard "Net balance (no bonus)" tile
+#              exactly (verified: same per-user formula).
+_BAL_GROSS = "(balance_cents + balance_new_cents + bonus_balance_cents)"
+_BAL_NOWALLET = "(balance_cents + balance_new_cents)"
+_BAL_NET = f"(CASE WHEN {SQL_HAS_PAID} THEN {SQL_REAL_MONEY} ELSE 0 END)"
+BALANCE_BASIS: dict[str, str] = {
+    "gross":    _BAL_GROSS,
+    "nowallet": _BAL_NOWALLET,
+    "net":      _BAL_NET,
+}
+
+# Non-balance sort orders (whitelisted). Balance sorts are built from the chosen
+# basis at query time (see page()).
+SORT_ORDERS = {
+    "created":   "created_at DESC",
+    "downloads": "downloads_count DESC, created_at DESC",
+}
+
 
 async def page(status: str | None, q: str | None, limit: int, offset: int,
                is_vip: bool | None = None, mode: str | None = None,
-               bonus: str | None = None, money: str | None = None) -> tuple[list[dict], int]:
-    """Paginated + optional filters (status / VIP / billing mode / bonus / money cohort)
-    + search (username or id). Returns (rows, total)."""
+               bonus: str | None = None, money: str | None = None,
+               sort: str | None = None,
+               bal_min: int | None = None, bal_max: int | None = None,
+               basis: str | None = None) -> tuple[list[dict], int, int]:
+    """Paginated + optional filters (status / VIP / billing mode / bonus / money cohort
+    / balance range) + search (username or id) + sort. `basis` chooses which balance
+    the range filter, the balance sort AND the summed total use — gross (incl. bonus),
+    nowallet (no bonus wallet) or net (no bonus at all). bal_min/bal_max are in CENTS.
+    Returns (rows, total_count, summed_balance_in_basis)."""
+    bexpr = BALANCE_BASIS.get(basis or "gross", _BAL_GROSS)
+    if sort == "balance":
+        order = f"{bexpr} DESC, created_at DESC"
+    elif sort == "balance_asc":
+        order = f"{bexpr} ASC, created_at DESC"
+    else:
+        order = SORT_ORDERS.get(sort or "created", SORT_ORDERS["created"])
     where, args = [], []
     if money and money in MONEY_COHORTS:
         where.append(f"({MONEY_COHORTS[money]})")
@@ -135,6 +176,12 @@ async def page(status: str | None, q: str | None, limit: int, offset: int,
     if mode:
         args.append(mode)
         where.append(f"billing_mode = ${len(args)}")
+    if bal_min is not None:               # balance (in the chosen basis) ≥ this
+        args.append(int(bal_min))
+        where.append(f"{bexpr} >= ${len(args)}")
+    if bal_max is not None:               # balance (in the chosen basis) ≤ this
+        args.append(int(bal_max))
+        where.append(f"{bexpr} <= ${len(args)}")
     if bonus == "wallet":                 # holds an unspent separate bonus wallet
         where.append("bonus_balance_cents > 0")
     elif bonus == "unspent":              # has balance but was never charged (never downloaded)
@@ -149,17 +196,19 @@ async def page(status: str | None, q: str | None, limit: int, offset: int,
             args.append(f"%{term}%")
             where.append(f"username ILIKE ${len(args)}")
     clause = ("WHERE " + " AND ".join(where)) if where else ""
-    # count + page fetch are independent → run concurrently (halves wall-time)
+    # count+sum and the page fetch are independent → run concurrently. The summary
+    # covers the WHOLE filtered set (every match), not just this page.
     import asyncio
-    total, rows = await asyncio.gather(
-        pool().fetchval(f"SELECT count(*)::int FROM users {clause}", *args),
+    summary, rows = await asyncio.gather(
+        pool().fetchrow(f"SELECT count(*)::int AS n, "
+                        f"COALESCE(SUM({bexpr}),0)::bigint AS bal FROM users {clause}", *args),
         pool().fetch(
             "SELECT *, (SELECT count(*)::int FROM downloads d WHERE d.user_id = users.telegram_id) "
-            f"AS downloads_count FROM users {clause} ORDER BY created_at DESC "
+            f"AS downloads_count FROM users {clause} ORDER BY {order} "
             f"LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
             *args, limit, offset),
     )
-    return [dict(r) for r in rows], total
+    return [dict(r) for r in rows], summary["n"], summary["bal"]
 
 
 async def usage(user_id: int) -> dict:

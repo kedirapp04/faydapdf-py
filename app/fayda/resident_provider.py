@@ -25,6 +25,7 @@ FIN comes back as an eSignet error that reads like "your number is wrong" when i
 is merely the wrong KIND of number for this server, so it is refused up front.
 """
 import asyncio
+import base64
 import contextvars
 import re
 import secrets
@@ -334,7 +335,8 @@ class Server5Provider(FaydaProvider):
             # Without one (typed-FAN path, admin-enabled per bot) the QR is built
             # from the identity data and will not pass verification — the user is
             # warned before the download starts.
-            drawn = await cards.build(_card_data(rec), qr_png=st.get("qr"))
+            qr_gen = (await settings_repo.get("s5_qr_gen") or "data").strip()
+            drawn = await cards.build(_card_data(rec), qr_png=st.get("qr"), qr_gen=qr_gen)
             if drawn["qr"]:
                 rec["QRCodes"] = _b64(drawn["qr"])
             if drawn["front"]:
@@ -346,13 +348,19 @@ class Server5Provider(FaydaProvider):
             # renderer only looks under user.data / data.user.data / data — a flat
             # record silently yields an empty page, i.e. a blank PDF the user still
             # gets charged for.
-            payload = {"user": {"data": rec}}
+            #
+            # The PDF only shows the cards as small margin thumbnails, so embed
+            # downscaled copies (cuts ~1 MB); the screenshots keep the full-res cards.
+            pdf_rec = dict(rec)
+            for k in ("fronts", "backs"):
+                if pdf_rec.get(k):
+                    pdf_rec[k] = _b64(cards.shrink_jpeg(base64.b64decode(pdf_rec[k])))
             from . import js_render
-            pdf_bytes, name = await js_render.render(payload, engine=config.PDF_ENGINE)
+            pdf_bytes, name = await js_render.render({"user": {"data": pdf_rec}}, engine=config.PDF_ENGINE)
             shots = []
             try:
                 from . import screenshot_render
-                shots = await asyncio.to_thread(screenshot_render.render, payload)
+                shots = await asyncio.to_thread(screenshot_render.render, {"user": {"data": rec}})
             except Exception as e:
                 print("[screenshot_render]", e)
             return ok(pdf=pdf_bytes, filename=f"{name}.pdf", screenshots=shots)

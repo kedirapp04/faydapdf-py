@@ -71,28 +71,72 @@ async def set_mode(mode: str, bot_id: int | None = None) -> str:
     return mode
 
 
-async def allow_typed_fan(bot_id: int | None = None) -> bool:
-    """Server 5: may this bot start a download from a TYPED FAN, or is the QR
-    screenshot required?
+def _truthy(v: str) -> bool:
+    return v.strip().lower() in ("1", "true", "yes", "on")
 
-    Off by default, and deliberately so. A typed FAN cannot produce a verifiable
-    QR — we refuse to fabricate one — so that download arrives as a plain PDF with
-    no card and no QR. Turning this on is a decision about what users receive, not
-    a convenience toggle, so it must be made explicitly per bot.
+
+async def allow_typed_fan(bot_id: int | None = None, user_id: int | None = None) -> bool:
+    """Server 5: may THIS download start from a TYPED FAN, or is the QR screenshot
+    required?
+
+    PER BOT, two independent tick-boxes:
+      * `s5_fan_all_<bot_id>`     — "allow ALL": ON → EVERYONE on this bot can use.
+      * `s5_fan_peruser_<bot_id>` — "per-user": ON → only users INDIVIDUALLY ENABLED
+        (`s5_fan_user_<uid>` = on) can use.
+    "allow ALL" wins if both are ticked; neither ticked = OFF (nobody), the default.
+
+    Off by default: a typed FAN cannot produce a verifiable QR, so that download is a
+    plain PDF with no card.
     """
     try:
-        if bot_id is not None:
-            v = (await settings_repo.get(f"s5_allow_fan_{bot_id}") or "").strip()
-            if v:
-                return v.lower() in ("1", "true", "yes", "on")
-        return await settings_repo.get_bool("s5_allow_fan", False)
+        if bot_id is None:
+            return False
+        if await settings_repo.get_bool(f"s5_fan_all_{bot_id}", False):
+            return True                       # allow ALL → everyone on this bot
+        if await settings_repo.get_bool(f"s5_fan_peruser_{bot_id}", False):
+            return await _peruser_allows(user_id)   # only enabled users
+        return False                          # neither ticked → nobody
     except Exception:
         return False        # DB down → the stricter behaviour
 
 
-async def set_allow_typed_fan(bot_id: int, allow: bool) -> bool:
-    await settings_repo.set(f"s5_allow_fan_{bot_id}", "true" if allow else "false")
-    return allow
+async def _peruser_allows(user_id: int | None) -> bool:
+    if user_id is None:
+        return False
+    uv = (await settings_repo.get(f"s5_fan_user_{user_id}") or "").strip()
+    return _truthy(uv)                        # only an explicit per-user 'on'
+
+
+async def user_fan_override(user_id: int) -> str:
+    """The raw per-user setting: 'true' / 'false' / '' (unset → follows bot/general)."""
+    try:
+        return (await settings_repo.get(f"s5_fan_user_{user_id}") or "").strip()
+    except Exception:
+        return ""
+
+
+async def bot_fan_flags(bot_id: int) -> dict:
+    """The two per-bot tick-boxes: {'all': bool, 'peruser': bool}."""
+    try:
+        return {"all": await settings_repo.get_bool(f"s5_fan_all_{bot_id}", False),
+                "peruser": await settings_repo.get_bool(f"s5_fan_peruser_{bot_id}", False)}
+    except Exception:
+        return {"all": False, "peruser": False}
+
+
+async def set_bot_fan_flag(bot_id: int, which: str, on: bool) -> None:
+    key = "s5_fan_all" if which == "all" else "s5_fan_peruser"
+    await settings_repo.set_bool(f"{key}_{bot_id}", bool(on))
+
+
+async def set_user_typed_fan(user_id: int, value) -> str:
+    """Per-user override. value True/False sets it; None/'' clears (follow bot/general)."""
+    if value in (None, "", "global", "clear"):
+        await settings_repo.set(f"s5_fan_user_{user_id}", "")
+        return ""
+    v = "true" if (value is True or _truthy(str(value))) else "false"
+    await settings_repo.set(f"s5_fan_user_{user_id}", v)
+    return v
 
 
 async def bot_mode_override(bot_id: int) -> str:

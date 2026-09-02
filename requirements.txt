@@ -16,3 +16,13 @@ python-multipart==0.0.21
 # Imported at startup by app/fayda/pass_provider.py, so a missing entry crashes
 # the whole app on Railway (as python-multipart once did) — declare it explicitly.
 cryptography==42.0.5
+# Pure-Python Fayda QR scanner (app/fayda/qr_scan.py) — replaces the Node scanner.
+# zxing-cpp decodes the dense new-format QR (self-contained wheel, no system libs);
+# opencv-headless loads the image; cbor2 parses the COSE credential; qrcode rebuilds
+# the QR. Imported lazily inside cards.scan(), so a missing wheel fails only QR
+# scanning, never the whole app. Use the HEADLESS opencv (no GUI libs) for servers.
+zxing-cpp==3.0.0
+opencv-python-headless==4.13.0.90
+numpy==2.3.5
+cbor2==6.1.1
+qrcode==8.2

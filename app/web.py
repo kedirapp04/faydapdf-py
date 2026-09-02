@@ -79,6 +79,7 @@ def _user_dto(u: dict) -> dict:
     return {
         "telegram_id": u["telegram_id"],
         "username": u["username"],
+        "first_name": u.get("first_name"),
         "status": u["status"],
         "billing_mode": u["billing_mode"],
         "balance_cents": u["balance_cents"],                  # OLD-price wallet
@@ -145,7 +146,7 @@ async def api_stats():
         {"id": bid, "username": config.BOT_USERNAMES.get(bid, ""),
          "primary": bid == config.bot_id_of(config.BOT_TOKEN),
          "mode": await _safe(fayda.bot_mode_override(bid), ""),   # '' = follows global
-         "allow_fan": await _safe(fayda.allow_typed_fan(bid), False)}
+         "fan_flags": await _safe(fayda.bot_fan_flags(bid), {"all":False,"peruser":False})}
         for bid in config.BOT_REGISTRY
     ]
     d["paused"] = await _safe(settings_repo.get_bool("paused", False), False)
@@ -170,6 +171,7 @@ async def api_stats():
     wb = await _safe(settings_repo.get("welcome_bonus_cents"), None)
     d["welcome_bonus_cents"] = int(wb) if wb is not None and str(wb).lstrip("-").isdigit() else users_repo.DEFAULT_WELCOME_BONUS_CENTS
     d["free_mode"] = await _safe(settings_repo.get_bool("free_mode", False), False)
+    d["s5_qr_gen"] = await _safe(settings_repo.get("s5_qr_gen"), "data") or "data"
     d["topup_bonus_enabled"] = await _safe(billing.topup_bonus_enabled(), True)
     d["topup_bonus_tiers"] = billing._fmt_tiers(await _safe(billing.topup_bonus_tiers(), []))
     d["pdf_filename_suffix"] = await _safe(settings_repo.get("pdf_filename_suffix"), "") or ""
@@ -200,15 +202,20 @@ async def _accounts_dto():
 
 @app.get("/api/users", dependencies=[Depends(require_admin)])
 async def api_users(page: int = 1, q: str = "", status: str = "", vip: str = "", mode: str = "",
-                    bonus: str = "", money: str = ""):
+                    bonus: str = "", money: str = "", sort: str = "",
+                    bal_min: str = "", bal_max: str = "", basis: str = ""):
     limit, page = 20, max(1, page)
     is_vip = True if vip == "1" else False if vip == "0" else None
-    rows, total = await users_repo.page(
+    rows, total, total_balance_cents = await users_repo.page(
         status or None, q or None, limit, (page - 1) * limit,
         is_vip=is_vip, mode=(mode or None), bonus=(bonus or None), money=(money or None),
+        sort=(sort or None), bal_min=_cents(bal_min), bal_max=_cents(bal_max),
+        basis=(basis or None),
     )
     pages = max(1, -(-total // limit))
-    return {"users": [_user_dto(u) for u in rows], "page": page, "pages": pages, "total": total}
+    return {"users": [_user_dto(u) for u in rows], "page": page, "pages": pages,
+            "total": total, "total_balance_cents": total_balance_cents,
+            "basis": basis or "gross"}
 
 
 @app.get("/api/users/{uid}", dependencies=[Depends(require_admin)])
@@ -218,6 +225,8 @@ async def api_user(uid: int):
         raise HTTPException(404, "not found")
     dto = _user_dto(u)
     dto["usage"] = await users_repo.usage(uid)
+    dto["s5_fan_override"] = await _safe(fayda.user_fan_override(uid), "")  # ''/'true'/'false'
+    dto["s5_fan_effective"] = await _safe(fayda.allow_typed_fan(u.get("last_bot_id"), uid), False)
     return dto
 
 
@@ -300,6 +309,9 @@ async def api_user_action(uid: int, request: Request):
         await pool().execute(f"UPDATE users SET {which}=$1, updated_at=now() WHERE telegram_id=$2", bool(body.get("value")), uid)
     elif action == "discount":
         await pool().execute("UPDATE users SET discount_cents=$1, updated_at=now() WHERE telegram_id=$2", _cents(body.get("value")) or 0, uid)
+    elif action == "s5fan":
+        # Server-5 by-FAN, per user. value: "on"/"off"/"global" (clear → follow bot/general).
+        await fayda.set_user_typed_fan(uid, {"on": True, "off": False}.get(str(body.get("value"))))
     elif action == "dm":
         msg = str(body.get("value") or "").strip()
         if not msg:
@@ -900,10 +912,10 @@ async def api_settings(request: Request):
     body = await request.json()
     if "mode" in body:
         await fayda.set_mode(str(body["mode"]))
-    if "bot_fan" in body:    # Server 5: may this bot accept a TYPED FAN?
+    if "bot_fan" in body:    # Server 5 by-FAN per bot: tick-box {bot_id, which:'all'|'peruser', on}
         bf = body["bot_fan"] or {}
         try:
-            await fayda.set_allow_typed_fan(int(bf.get("bot_id")), bool(bf.get("allow")))
+            await fayda.set_bot_fan_flag(int(bf.get("bot_id")), str(bf.get("which") or ""), bool(bf.get("on")))
         except (TypeError, ValueError):
             pass
     if "bot_mode" in body:   # per-bot download-mode override ({"bot_id":.., "mode":..})
@@ -935,6 +947,8 @@ async def api_settings(request: Request):
         await settings_repo.set("welcome_bonus_cents", str(_cents(body["welcome_bonus_birr"]) or 0))
     if "free_mode" in body:
         await settings_repo.set_bool("free_mode", bool(body["free_mode"]))
+    if "s5_qr_gen" in body:
+        _v = str(body["s5_qr_gen"]); await settings_repo.set("s5_qr_gen", _v if _v in ("data","nosig","blank","unscannable") else "data")
     if "topup_bonus_enabled" in body:
         await billing.set_topup_bonus_enabled(bool(body["topup_bonus_enabled"]))
     if "topup_bonus_tiers" in body:

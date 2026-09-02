@@ -38,6 +38,7 @@ import time
 import aiohttp
 
 from .. import config
+from ..repo import settings as settings_repo
 from .base import FaydaProvider, ok, err
 from . import cards
 from .server4_provider import (
@@ -395,7 +396,8 @@ class Server6Provider(FaydaProvider):
                 return err("Couldn't retrieve your Fayda data — please try again.")
 
             # This API returns data, not card images — draw them (English only).
-            drawn = await cards.build(_card_data(rec))
+            qr_gen = (await settings_repo.get("s5_qr_gen") or "data").strip()
+            drawn = await cards.build(_card_data(rec), qr_gen=qr_gen)
             if drawn["qr"]:
                 rec["QRCodes"] = _b64(drawn["qr"])
             if drawn["front"]:
@@ -403,13 +405,18 @@ class Server6Provider(FaydaProvider):
             if drawn["back"]:
                 rec["backs"] = _b64(drawn["back"])
 
-            payload = {"user": {"data": rec}}          # the shape the renderers require
+            # The PDF shows the cards only as small margin thumbnails, so embed
+            # downscaled copies (cuts ~1 MB); the screenshots keep the full-res cards.
+            pdf_rec = dict(rec)
+            for k in ("fronts", "backs"):
+                if pdf_rec.get(k):
+                    pdf_rec[k] = _b64(cards.shrink_jpeg(base64.b64decode(pdf_rec[k])))
             from . import js_render
-            pdf_bytes, name = await js_render.render(payload, engine=config.PDF_ENGINE)
+            pdf_bytes, name = await js_render.render({"user": {"data": pdf_rec}}, engine=config.PDF_ENGINE)
             shots = []
             try:
                 from . import screenshot_render
-                shots = await asyncio.to_thread(screenshot_render.render, payload)
+                shots = await asyncio.to_thread(screenshot_render.render, {"user": {"data": rec}})
             except Exception as e:
                 print("[screenshot_render]", e)
             return ok(pdf=pdf_bytes, filename=f"{name}.pdf", screenshots=shots)

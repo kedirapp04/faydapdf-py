@@ -97,42 +97,66 @@ def _bytes(d: dict, key):
     return base64.b64decode(d[key]) if d.get(key) else None
 
 
+def shrink_jpeg(jpeg_bytes: bytes, max_width: int = 800, quality: int = 72) -> bytes:
+    """Downscale a card JPEG for EMBEDDING IN THE PDF, where it only appears as a
+    small thumbnail on the margin — a 1968-wide card there wastes ~0.6 MB each. The
+    full-resolution card is still sent as a separate screenshot, so nothing the user
+    zooms into is degraded. Returns the original on any error."""
+    if not jpeg_bytes:
+        return jpeg_bytes
+    try:
+        from PIL import Image
+        import io
+        im = Image.open(io.BytesIO(jpeg_bytes))
+        if im.width > max_width:
+            h = round(im.height * max_width / im.width)
+            im = im.resize((max_width, h), Image.LANCZOS)
+        out = io.BytesIO()
+        im.convert("RGB").save(out, format="JPEG", quality=quality, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return jpeg_bytes
+
+
 async def scan(image: bytes) -> dict:
     """Read the QR out of the user's Telebirr Fayda (National ID) screenshot.
 
-    Returns {ok, fan, fan_valid, full_name, birth_date, gender, signed, qr}. `qr`
-    is the QR REGENERATED FROM THE SCANNED TEXT — the payload is byte-identical, so
-    it keeps the real signature and still verifies. That is the reason to scan
-    rather than build: a generated QR carries a sample signature no verifier
-    accepts.
+    Runs entirely in Python now (zxing-cpp) — NO Node subprocess. It reads the dense
+    new-format QR the Node scanner could not, is ~30x faster, and needs no
+    node_modules, so QR input works even where the card-drawing bridge is absent.
+    The returned `qr` is regenerated from the ORIGINAL payload, so its Fayda
+    signature survives and the card's QR still verifies.
 
     ok=False with a reason on an unreadable image — an ordinary outcome (blurry
     photo, wrong screenshot), not an error to raise at the user.
     """
     if not image:
         return {"ok": False, "error": "empty image"}
-    empty = {"ok": False, "error": why_unavailable() or "scanner unavailable"}
-    d = await _run({"op": "scan", "image": base64.b64encode(image).decode()}, empty)
-    if not d.get("ok"):
-        return {"ok": False, "error": d.get("error") or "could not read the QR"}
-    return {"ok": True, "fan": d.get("fan") or "", "fan_valid": bool(d.get("fanValid")),
-            "full_name": d.get("fullName") or "", "birth_date": d.get("birthDate") or "",
-            "gender": d.get("gender") or "", "signed": bool(d.get("signed")),
-            "qr": _bytes(d, "qr")}
+    try:
+        from . import qr_scan
+    except Exception as e:                 # a missing wheel fails only scanning
+        print("[qr_scan] unavailable:", e)
+        return {"ok": False, "error": "QR scanner is not available on this host."}
+    # zxing-cpp/opencv are CPU-bound C extensions — run off the event loop.
+    return await asyncio.to_thread(qr_scan.scan, image)
 
 
-async def build(card_data: dict, qr_png: bytes | None = None) -> dict:
+async def build(card_data: dict, qr_png: bytes | None = None, qr_gen: str = "data") -> dict:
     """Draw both cards.
 
     Pass `qr_png` (the scanned QR) and it is used as-is, so the card carries the
-    real, verifiable QR. Without it a QR is built from the identity data — that
-    one renders and scans but will NOT pass signature verification.
+    real, verifiable QR. Without it a QR is built per `qr_gen`:
+      * "data"  — a legacy QR from the identity data with a sample signature (scans,
+                  shows data, does NOT verify).
+      * "nosig" — the same data QR but with an empty signature (no signature).
+      * "blank" — a QR that decodes to nothing and carries no signature.
 
     Never raises: a card failure must not cost the user their PDF, so every
     problem comes back as None and is logged once.
     """
     empty = {"qr_text": None, "qr": None, "front": None, "back": None, "qr_from_scan": False}
     payload = dict(card_data)
+    payload["qrGen"] = qr_gen if qr_gen in ("data", "nosig", "blank", "unscannable") else "data"
     if qr_png:
         payload["qrPngB64"] = base64.b64encode(qr_png).decode()
     d = await _run(payload, empty)

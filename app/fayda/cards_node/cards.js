@@ -90,22 +90,81 @@ async function doCards(data) {
   let qrText = data.qrText || null;
   let qrPng = data.qrPngB64 ? Buffer.from(data.qrPngB64, 'base64') : null;
 
-  // No scanned QR — build one from the identity data (typed-FAN path, which an
-  // admin has to enable per bot). It renders and scans, but its signature is a
-  // fixed sample, so a verifier app rejects it. The caller is told which kind it
-  // got via `qrFromScan`, and the user is warned before the download starts.
+  // No scanned QR — build one (typed-FAN path). Three admin-selectable kinds:
+  //   qrGen = "data"  (default): a legacy QR with the person's data AND a sample
+  //     signature — it scans, shows data, but a verifier rejects the signature.
+  //   qrGen = "nosig": the same legacy QR with the person's data but an EMPTY
+  //     signature (:SIGN: with nothing after it) — scans and shows data, no signature.
+  //   qrGen = "blank": a QR that decodes to NOTHING and carries no signature.
   if (!qrPng) {
+    const qrGen = (data.qrGen || 'data');
+    const QRCode = require('qrcode');
+    const opts = { errorCorrectionLevel: 'L', type: 'png', margin: 2, scale: 4 };
     try {
-      const face = data.photo ? await makeQrThumbWebp(data.photo) : null;
-      const built = await buildLegacyQr({
-        face,
-        fullName: data.fullName_eng || data.fullName || '',
-        gender: data.sex_eng || data.gender || '',
-        fan: data.fan || '',
-        dob: data.dobGc || '',
-      });
-      qrText = built.qrText;
-      qrPng = built.qrPngBuffer;
+      if (qrGen === 'unscannable') {
+        // A REAL QR at the SAME density as the actual new-format Fayda QR — a
+        // ~1185-byte byte-mode payload at EC level L gives the same high version
+        // (dense, ~version 27), with genuine finder patterns, timing and quiet zone.
+        // Then ~40% of the DATA modules are flipped, far beyond error correction, so
+        // no reader can decode it; the finder patterns are kept so it reads visually
+        // as an authentic Fayda QR.
+        const { createCanvas } = require('@napi-rs/canvas');
+        const dummy = Buffer.alloc(1185);
+        for (let i = 0; i < dummy.length; i += 1) dummy[i] = (i * 31 + 7) & 0xff;
+        const qr = QRCode.create([{ data: dummy, mode: 'byte' }], { errorCorrectionLevel: 'L' });
+        const size = qr.modules.size;
+        const md = qr.modules;
+        const inFinder = (r, c) =>
+          (r < 8 && c < 8) || (r < 8 && c >= size - 8) || (r >= size - 8 && c < 8);
+        for (let r = 0; r < size; r += 1) {
+          for (let c = 0; c < size; c += 1) {
+            if (inFinder(r, c)) continue;              // keep finder patterns intact
+            if ((((r * 928371 + c * 123457) >>> 0) % 100) < 40) {
+              const i = r * size + c;
+              md.data[i] = md.data[i] ? 0 : 1;         // flip → breaks decoding
+            }
+          }
+        }
+        const margin = 4, box = 5, dim = (size + margin * 2) * box;
+        const cv = createCanvas(dim, dim);
+        const cx = cv.getContext('2d');
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, dim, dim);
+        cx.fillStyle = '#000';
+        for (let r = 0; r < size; r += 1) {
+          for (let c = 0; c < size; c += 1) {
+            if (md.data[r * size + c]) cx.fillRect((c + margin) * box, (r + margin) * box, box, box);
+          }
+        }
+        qrText = null;
+        qrPng = await cv.encode('png');
+      } else if (qrGen === 'blank') {
+        // A legacy-format QR (has the :DLT: and :SIGN: markers the Fayda app looks
+        // for) but with EMPTY data and no signature. The app recognises it as a
+        // legacy QR and shows a blank result — no "not a COSE security Message"
+        // error, because it is never treated as a new COSE credential.
+        qrText = ':DLT::V:4:G::A::D::SIGN:';
+        qrPng = await QRCode.toBuffer(qrText, opts);
+      } else {
+        const face = data.photo ? await makeQrThumbWebp(data.photo) : null;
+        const built = await buildLegacyQr({
+          face,
+          fullName: data.fullName_eng || data.fullName || '',
+          gender: data.sex_eng || data.gender || '',
+          fan: data.fan || '',
+          dob: data.dobGc || '',
+        });
+        qrText = built.qrText;
+        qrPng = built.qrPngBuffer;
+        if (qrGen === 'nosig') {
+          // Keep the data with an EMPTY signature: ":SIGN:" stays but nothing follows.
+          // The ":SIGN:" marker is what the Fayda app uses to recognise a legacy DATA
+          // QR — remove it entirely and the app instead tries to parse the text as a
+          // new COSE QR and errors ("too many bytes … CBOR") instead of showing data.
+          const i = qrText.lastIndexOf(':SIGN:');
+          if (i >= 0) qrText = qrText.slice(0, i + ':SIGN:'.length);
+          qrPng = await QRCode.toBuffer(qrText, opts);
+        }
+      }
     } catch (e) {
       process.stderr.write(`qr build failed: ${e && e.message}\n`);
     }

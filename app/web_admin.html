@@ -123,6 +123,9 @@
       <select id="bonusF" onchange="loadUsers(1)"><option value="">Any bonus</option><option value="wallet">Has bonus wallet</option><option value="unspent">Never charged (holds balance)</option></select>
       <select id="moneyF" onchange="loadUsers(1)" title="Same cohorts as the Money tab">
         <option value="">💰 Any money</option>
+        <option value="has_gross">💰 Has spendable (incl bonus)</option>
+        <option value="has_nowallet">💵 Has balance (no bonus wallet)</option>
+        <option value="has_net">💵 Has real money (no bonus)</option>
         <option value="old_balance">🕘 Has old-price balance</option>
         <option value="new_balance">🆕 Has new-price balance</option>
         <option value="both_wallets">👥 Has BOTH wallets</option>
@@ -133,7 +136,17 @@
         <option value="in_debt">⚠️ In debt (owes)</option>
         <option value="empty">🕳 Nothing left to spend</option>
       </select>
+      <select id="sortF" onchange="loadUsers(1)" title="Sort order">
+        <option value="">🆕 Newest first</option>
+        <option value="balance">💰 Balance: high → low</option>
+        <option value="balance_asc">💰 Balance: low → high</option>
+        <option value="downloads">📥 Most downloads</option>
+      </select>
+      <span class="muted" title="Range applies to the balance view picked in the money filter (incl bonus by default)">💰</span>
+      <input class="sm" id="balMin" type="number" step="0.01" placeholder="min Birr" oninput="deb2(()=>loadUsers(1))" style="width:90px">
+      <input class="sm" id="balMax" type="number" step="0.01" placeholder="max Birr" oninput="deb2(()=>loadUsers(1))" style="width:90px">
     </div>
+    <div class="muted" id="usrSummary" style="margin:4px 0 8px;font-size:13px"></div>
     <div class="scroll"><table id="usrTbl"><thead><tr><th>User</th><th>Status</th><th>Mode</th><th>Balance</th><th>Price</th><th>📥 Downloads</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
     <div class="pager" id="usrPager"></div>
   </div>
@@ -270,6 +283,13 @@
       <span class="muted">🎁 Welcome bonus (Birr):</span><input class="sm" id="welcomeBonus" type="number" step="0.01" min="0" title="Granted to NEW users into their bonus wallet"/>
       <button class="btn sec" onclick="saveWelcomeBonus()">Save</button>
       <label class="chk" style="margin-left:16px"><input type="checkbox" id="freeMode" onchange="saveSet({free_mode:this.checked})"> 🆓 Free mode (all downloads free)</label>
+      <span class="muted" style="margin-left:16px" title="Which QR to draw on the card when there is NO scanned QR (Server 5 by-FAN, and Server 6). Only affects generated QRs — a real scanned QR is always used as-is.">🔳 Generated QR:</span>
+      <select id="s5QrGen" onchange="saveSet({s5_qr_gen:this.value})" title="Data: legacy QR with the person's data + a sample signature (scans, shows data, does NOT verify). No signature: the same data QR but with an empty signature. Blank: a QR that scans to NOTHING.">
+        <option value="data">📇 Data + sample signature</option>
+        <option value="nosig">📄 Data, no signature</option>
+        <option value="blank">⬜ Blank (not a valid credential)</option>
+        <option value="unscannable">🚫 Unscannable (QR reader can't read it)</option>
+      </select>
     </div>
     <div class="row" style="margin-top:12px">
       <label class="chk"><input type="checkbox" id="topupBonusOn" onchange="saveSet({topup_bonus_enabled:this.checked})"> 🎁 Top-up bonus</label>
@@ -584,8 +604,9 @@ function renderBilling(s){
     return `<span class="row" style="gap:6px"><span class="muted" style="min-width:210px">${label}</span>`+
       `<select onchange='saveSet({bot_mode:{bot_id:${b.id},mode:this.value}})'>`+
       opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+opt("server5","Server 5 (resident portal)")+opt("server6","Server 6 (FaydaPass VC)")+
-      `</select><label class="chk" title="Server 5 only. ON: a typed FAN is accepted and the QR is BUILT from the user's data — the card is complete but its QR will NOT pass verification. OFF: the user must send their Telebirr QR screenshot, and the card carries their real, verifiable QR.">`+
-      `<input type="checkbox" ${b.allow_fan?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},allow:this.checked}})'> accept FAN (build QR)</label></span>`;
+      `</select>`+
+      `<label class="chk" title="Server 5: allow EVERYONE on this bot to start a download by typing a FAN (PDF gets a generated, non-verifying QR)."><input type="checkbox" ${b.fan_flags&&b.fan_flags.all?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},which:"all",on:this.checked}})'> by-FAN: all</label>`+
+      `<label class="chk" title="Server 5: allow only users you enabled in their Manage panel to type a FAN on this bot."><input type="checkbox" ${b.fan_flags&&b.fan_flags.peruser?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},which:"peruser",on:this.checked}})'> by-FAN: per-user</label></span>`;
   }).join("");}
   $("#pauseBtn").textContent=s.paused?"⏸ Paused (resume)":"▶ Running (pause)";
   const setv=(id,v)=>{const el=$(id);if(el&&document.activeElement!==el)el.value=v||""};
@@ -607,6 +628,7 @@ function renderBilling(s){
   const av=$("#showAV");if(av)av.checked=!!s.show_autoverify;
   const wb=$("#welcomeBonus");if(wb&&document.activeElement!==wb)wb.value=(Number(s.welcome_bonus_cents||0)/100);
   const fm=$("#freeMode");if(fm)fm.checked=!!s.free_mode;
+  {const x=$("#s5QrGen");if(x&&document.activeElement!==x)x.value=s.s5_qr_gen||"data";}
   const tbo=$("#topupBonusOn");if(tbo)tbo.checked=!!s.topup_bonus_enabled;
   const tbt=$("#topupBonusTiers");if(tbt&&document.activeElement!==tbt)tbt.value=s.topup_bonus_tiers||"";
   const ps=$("#pdfSuffix");if(ps&&document.activeElement!==ps)ps.value=s.pdf_filename_suffix||"";
@@ -648,7 +670,14 @@ async function loadUsers(p){
   PAGE.users=p||PAGE.users;
   const q=encodeURIComponent($("#q").value.trim()),st=$("#statusF").value,vip=$("#vipF").value,mode=$("#modeF").value,bonus=$("#bonusF").value;
   const money=($("#moneyF")||{}).value||"";
-  const d=await api(`/api/users?page=${PAGE.users}&q=${q}&status=${st}&vip=${vip}&mode=${mode}&bonus=${bonus}&money=${money}`);
+  const sort=($("#sortF")||{}).value||"";
+  const bmin=($("#balMin")||{}).value||"",bmax=($("#balMax")||{}).value||"";
+  // Basis follows the money-view cohort, so the total/range match the chosen view.
+  const basis={has_net:"net",real_money:"net",has_nowallet:"nowallet",has_gross:"gross"}[money]||"gross";
+  const d=await api(`/api/users?page=${PAGE.users}&q=${q}&status=${st}&vip=${vip}&mode=${mode}&bonus=${bonus}&money=${money}&sort=${sort}&bal_min=${bmin}&bal_max=${bmax}&basis=${basis}`);
+  const filtered=!!(q||st||vip||mode||bonus||money||bmin||bmax);
+  const basisLbl={gross:"incl. bonus",nowallet:"without bonus wallet",net:"without any bonus"}[d.basis||"gross"];
+  $("#usrSummary").innerHTML=`${filtered?"🔎 Filtered":"👥 All"}: <b>${d.total.toLocaleString()}</b> user${d.total===1?"":"s"} · total balance <b>${birrMask(d.total_balance_cents)}</b> <span class="muted">(${basisLbl})</span>`;
   const tb=$("#usrTbl tbody");
   if(!d.users.length){tb.innerHTML=`<tr><td colspan="6" class="muted">No users.</td></tr>`;$("#usrPager").innerHTML="";return}
   tb.innerHTML=d.users.map(userRow).join("");
@@ -660,7 +689,10 @@ function userRow(u){
   const vip=u.is_vip?` <span class="tag vip">VIP</span>`:"";
   const tagChip=u.tag?` <span class="tag">🏷 ${esc(u.tag)}</span>`:"";
   const price=u.price_override_cents!=null?birr(u.price_override_cents)+" *":"global";
-  return `<tr><td>${who(id,u.username)}<div class="muted" style="font-size:11px">#${id}</div></td>
+  const name=u.first_name?esc(u.first_name):"";
+  const uname=u.username?`@${esc(u.username)}`:"";
+  const idline=[uname,`#${id}`].filter(Boolean).join(" · ");
+  return `<tr><td>${name?`<b>${name}</b><div class="muted" style="font-size:11px">${idline}</div>`:`${uname||("#"+id)}<div class="muted" style="font-size:11px">#${id}</div>`}</td>
     <td>${st}${vip}${tagChip}</td><td>${u.billing_mode}</td><td class="baltxt">${birr((u.balance_cents||0)+(u.balance_new_cents||0))}<div class="muted" style="font-size:10px">${birr(u.balance_cents||0)} old · ${birr(u.balance_new_cents||0)} new</div></td><td>${price}</td>
     <td>${u.downloads_count||0}</td>
     <td><button class="btn sec sm" onclick="openManage(${id})">⚙ Manage</button></td></tr>`;
@@ -704,6 +736,16 @@ function manageHtml(u){
         <div class="fld"><input class="sm" id="pr${id}" type="number" step="0.01" placeholder="price"><button class="btn sec sm" onclick="setPrice(${id})">Set</button><button class="btn sec sm" onclick="act(${id},'price','clear')">Global</button></div>
         <div class="fld" style="margin-top:6px"><input class="sm" id="ds${id}" type="number" step="0.01" placeholder="discount" value="${u.discount_cents?(u.discount_cents/100):''}"><button class="btn sec sm" onclick="setDiscount(${id})">Discount</button></div>
         <div class="fld" style="margin-top:6px"><input class="sm" id="cl${id}" type="number" step="0.01" placeholder="credit"><button class="btn sec sm" onclick="setCredit(${id})">Limit</button></div>
+      </div>
+
+      <div class="grp"><div class="lbl">Server 5 by-FAN</div>
+        <div class="fld">
+          <select onchange="act(${id},'s5fan',this.value)" title="Only applies when the general master switch is ON. Then this can turn by-FAN OFF for this user (require QR) or force it ON.">
+            <option value="global"${!u.s5_fan_override?" selected":""}>Follow general (${u.s5_fan_effective?"on":"off"})</option>
+            <option value="on"${u.s5_fan_override==="true"?" selected":""}>✅ Allow by-FAN</option>
+            <option value="off"${u.s5_fan_override==="false"?" selected":""}>🚫 Require QR</option>
+          </select>
+        </div>
       </div>
 
       <div class="grp"><div class="lbl">Actions</div>

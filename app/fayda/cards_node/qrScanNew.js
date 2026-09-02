@@ -96,6 +96,10 @@ async function scanBytes(buffer) {
     ['crop/global',     crop, G_],
     ['crop x2/hybrid',  (b) => crop(b).resize({ w: cropW * 2 }), H_],
     ['crop x2/global',  (b) => crop(b).resize({ w: cropW * 2 }), G_],
+    // x3 rescues some heavily-downscaled photos that x2 misses. Last, because it is
+    // the most expensive; it cannot recover a QR that compression already destroyed.
+    ['crop x3/hybrid',  (b) => crop(b).resize({ w: cropW * 3 }), H_],
+    ['crop x3/global',  (b) => crop(b).resize({ w: cropW * 3 }), G_],
   ];
   for (const [name, prep, Bin] of attempts) {
     try {

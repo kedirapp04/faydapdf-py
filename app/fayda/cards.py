@@ -97,11 +97,12 @@ def _bytes(d: dict, key):
     return base64.b64decode(d[key]) if d.get(key) else None
 
 
-def shrink_jpeg(jpeg_bytes: bytes, max_width: int = 800, quality: int = 72) -> bytes:
+def shrink_jpeg(jpeg_bytes: bytes, max_width: int = 1000, quality: int = 80) -> bytes:
     """Downscale a card JPEG for EMBEDDING IN THE PDF, where it only appears as a
     small thumbnail on the margin — a 1968-wide card there wastes ~0.6 MB each. The
     full-resolution card is still sent as a separate screenshot, so nothing the user
-    zooms into is degraded. Returns the original on any error."""
+    zooms into is degraded. 1000px/q80 keeps the PDF ~1.9 MB (800/72 gave ~1.6 MB).
+    Returns the original on any error."""
     if not jpeg_bytes:
         return jpeg_bytes
     try:

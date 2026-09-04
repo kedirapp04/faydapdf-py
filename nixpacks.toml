@@ -1,10 +1,16 @@
 # Railway/Nixpacks build config.
 # - tesseract: OCR binary for the Telebirr-screenshot reader (pytesseract shells out).
-# - nodejs: runs the bundled JS PDF renderer (app/fayda/js_render/render.bundle.js) so
-#   the ID PDF is byte-for-byte the faydapdf-railway output. The bundle is self-contained
-#   (esbuild), so only the Node runtime is needed — no `npm install`.
+# - nodejs: runs the bundled JS PDF renderer (app/fayda/js_render/render.bundle.js — a
+#   self-contained esbuild bundle, no npm install) AND the Server-5/6 card generator
+#   (app/fayda/cards_node/), which is NOT bundled (@napi-rs/canvas is native) and so needs
+#   its node_modules installed at build time — see [phases.install]. Without them the admin
+#   UI shows "cards off — node_modules missing" and the front/back cards + generated QR are
+#   not drawn (the PDF still renders).
 # nixPkgs is the reliable way on Nixpacks; aptPkgs is kept as a fallback. "..." keeps
-# Nixpacks' defaults.
+# Nixpacks' defaults (incl. the Python pip install).
 [phases.setup]
 nixPkgs = ["...", "tesseract", "nodejs"]
 aptPkgs = ["...", "tesseract-ocr"]
+
+[phases.install]
+cmds = ["...", "npm install --omit=dev --prefix app/fayda/cards_node"]

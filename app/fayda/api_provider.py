@@ -6,6 +6,8 @@ POST {BASE}/api/forgot-fan         {name, phone}        -> {phone, message}
 Header: x-api-key
 """
 import asyncio
+import base64
+import contextvars
 from urllib.parse import unquote
 
 import aiohttp
@@ -14,6 +16,17 @@ from .. import config
 from .base import FaydaProvider, ok, err
 
 _TIMEOUT = aiohttp.ClientTimeout(total=60)
+
+# A QR scanned off the user's screenshot, set per-download before send_otp. The
+# gateway's Server 5 embeds this REAL, verifiable QR on the card instead of
+# generating one. Captured at send_otp keyed by the gateway sessionId, then sent at
+# verify — the gateway builds the card at verify time.
+_qr_ctx = contextvars.ContextVar("api_qr", default=None)
+_QR_BY_SESSION: dict[str, bytes] = {}
+
+
+def set_scanned_qr(qr_png: bytes | None) -> None:
+    _qr_ctx.set(qr_png or None)
 
 
 class ApiProvider(FaydaProvider):
@@ -39,16 +52,25 @@ class ApiProvider(FaydaProvider):
             async with http.post("/api/session", json={"individualId": individual_id}) as r:
                 data = await r.json(content_type=None)
                 if r.status == 200 and data.get("ok"):
-                    return ok(session=data.get("sessionId"), masked_mobile=data.get("maskedMobile"))
+                    sid = data.get("sessionId")
+                    qr = _qr_ctx.get()          # scanned QR for this download, if any
+                    if sid and qr:
+                        _QR_BY_SESSION[str(sid)] = qr
+                    return ok(session=sid, masked_mobile=data.get("maskedMobile"))
                 return err(str(data.get("error") or "Couldn't send the OTP."))
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             return err(f"Service is unreachable right now. ({type(e).__name__})")
 
     async def verify_pdf(self, session, otp: str) -> dict:
+        body = {"otp": otp, "format": "pdf"}
+        # Forward the scanned QR (if any) so the gateway embeds the REAL, verifiable
+        # QR on the card instead of generating one.
+        qr = _QR_BY_SESSION.pop(str(session), None)
+        if qr:
+            body["qr"] = base64.b64encode(qr).decode()
         try:
             http = await self._http()
-            async with http.post(f"/api/session/{session}/verify",
-                                  json={"otp": otp, "format": "pdf"}) as r:
+            async with http.post(f"/api/session/{session}/verify", json=body) as r:
                 if r.status == 200 and r.content_type == "application/pdf":
                     body = await r.read()
                     # Reject an empty/truncated document — never deliver + charge for it.

@@ -362,18 +362,22 @@ async def _begin_download(m: Message, state: FSMContext, u: dict, fan: str, queu
     data = await state.get_data()
     qr_b64 = data.get("qr_b64") if data.get("qr_fan") == fan else None
     _mode = await fayda.active_mode(m.bot.id)
-    if not qr_b64 and _mode == "server5":
-        # A typed FAN is allowed only if enabled for this user / bot / generally
-        # (most-specific wins). The card is still drawn, but its QR is generated from
-        # the identity data and will not verify — say so before charging anyone.
+    if qr_b64:
+        # A scanned QR is embedded (server5 locally, or api via the gateway) — the
+        # card carries the user's REAL, verifiable code, so no "unsigned" warning.
+        unsigned_qr = False
+    elif _mode == "server5":
+        # Typed FAN in server5 — allowed only if enabled for this user / bot / generally
+        # (most-specific wins). The card is drawn, but its QR is generated and won't
+        # verify — say so before charging anyone.
         if not await fayda.allow_typed_fan(m.bot.id, uid):
             await state.clear()
             return await m.answer(i18n.t("qr_required"), reply_markup=kb.main_kb(uid))
         unsigned_qr = True
     elif _mode == "api":
-        # API mode routes through the gateway, which runs Server 5 (the card QR is
-        # generated, not scanned, so it won't verify). Warn at OTP entry — same
-        # notice, same timing as the native Server-5 typed-FAN path.
+        # API mode with a TYPED FAN routes through the gateway's Server 5, which then
+        # GENERATES the QR (won't verify). Warn at OTP entry — same notice/timing as
+        # the native Server-5 typed-FAN path. (With a scanned QR, handled above.)
         unsigned_qr = True
     else:
         unsigned_qr = False
@@ -940,11 +944,12 @@ async def _try_qr_download(m: Message, state: FSMContext, file_id: str | None = 
     finished card verifies. Rebuilding one from the identity data cannot.
     """
     from ..fayda import cards
-    # Server 5 ONLY. It is the one mode that draws the card itself, so it is the only
-    # one a scanned QR can reach; the others get their images from upstream. Checked
-    # first because it is the cheapest test — no file download, no subprocess.
+    # A scanned QR can be embedded by two modes: server5 (draws the card itself) and
+    # api (the gateway draws it via its Server 5, and now accepts a scanned QR). The
+    # others get their card images from upstream, so a scanned QR has nowhere to go.
+    # Checked first because it is the cheapest test — no file download, no subprocess.
     mode = await fayda.active_mode(m.bot.id)
-    if mode != "server5":
+    if mode not in ("server5", "api"):
         log.info("qr: skipped, mode=%s (bot %s)", mode, m.bot.id)
         return False
     # NOTE: scanning is pure Python now (no cards.available() gate) — it works even

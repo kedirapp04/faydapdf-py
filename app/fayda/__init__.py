@@ -194,11 +194,14 @@ async def proxy_test(url: str = "") -> dict:
 
 
 def set_qr_context(qr_png: bytes | None) -> None:
-    """Server 5: the QR scanned off the user's screenshot, to be drawn on the card.
-    Passing the SCANNED QR keeps the real signature, so the card verifies; a QR
-    rebuilt from the identity data carries a sample signature and never will."""
+    """The QR scanned off the user's screenshot, to be embedded on the card — used by
+    server5 (draws the card locally) and api (forwards it to the gateway). Passing the
+    SCANNED QR keeps the real signature, so the card verifies; a QR rebuilt from the
+    identity data carries a sample signature and never will."""
     from .resident_provider import set_scanned_qr
     set_scanned_qr(qr_png)
+    from .api_provider import set_scanned_qr as _api_set_scanned_qr
+    _api_set_scanned_qr(qr_png)
 
 
 def set_vip_context(vip: bool) -> None:

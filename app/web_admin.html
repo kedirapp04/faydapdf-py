@@ -247,7 +247,7 @@
     <h2>⚙️ Billing & settings</h2>
     <div class="row">
       <span class="muted">Download mode:</span>
-      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option><option value="server5">Server 5 (resident portal)</option><option value="server6">Server 6 (FaydaPass VC)</option></select>
+      <select id="modeSel" onchange="saveSet({mode:this.value})"><option value="api">API (gateway)</option><option value="server4">Server 4 (native)</option><option value="proxy">Proxy (native via VPS IP)</option><option value="server5">Server 5 (resident portal)</option><option value="server6">Server 6 (FaydaPass VC)</option><option value="server7">Server 7 (hosted API)</option><option value="server8">Server 8 (Card Order)</option></select>
       <span class="muted" style="margin-left:12px">Service:</span><button class="btn sec" id="pauseBtn" onclick="togglePause()">…</button>
       <span class="muted" style="margin-left:12px">DB:</span><span id="dbStat" class="tag">…</span>
       <select id="dbPolicy" onchange="saveSet({db_down_policy:this.value})"><option value="refuse">DB down: Refuse</option><option value="free">DB down: Serve free</option><option value="fallback">DB down: Fallback</option></select>
@@ -270,6 +270,23 @@
       <button class="btn sec" onclick="saveSet({resident_basic_auth:$('#residentAuth').value})">Save</button>
       <span id="cardsStat" class="muted" style="font-size:12px"></span>
     </div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted" style="min-width:110px" title="Used only in Server 7 (hosted API) mode">🔑 Server 7 key:</span>
+      <input id="server7Key" style="min-width:320px" placeholder="otp.affiliate.pro.et x-api-key"/>
+      <button class="btn sec" onclick="saveSet({server7_api_key:$('#server7Key').value})">Save</button>
+      <span class="muted" style="margin-left:12px" title="Direct PDF: relay the finished PDF the API renders (no screenshots). JSON → build here: fetch identity JSON and draw the cards + PDF locally (screenshots possible; needs Node).">Type:</span>
+      <select id="server7Render" onchange="saveSet({server7_render:this.value})">
+        <option value="pdf">📄 Direct PDF (relay)</option>
+        <option value="json">🧩 JSON → build PDF here</option>
+      </select>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px"><b>Server 7</b> is a hosted API (16-digit FAN). <b>Direct PDF</b> relays the finished PDF it renders. <b>JSON → build here</b> pulls identity JSON and draws the cards + PDF locally (same look as Server 4/5, screenshots possible — needs Node). Each verify costs 1 API point.</div>
+    <div class="row" style="margin-top:12px">
+      <span class="muted" style="min-width:110px" title="Used only in Server 8 (Card Order) mode. This is Fayda's Next.js server-action hash — it changes when card-order.fayda.et redeploys.">🧩 Server 8 action:</span>
+      <input id="server8Action" style="min-width:320px" placeholder="next-action hash (from card-order.fayda.et)"/>
+      <button class="btn sec" onclick="saveSet({server8_next_action:$('#server8Action').value})">Save</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px"><b>Server 8</b> is the Card Order portal (card-order.fayda.et), 16-digit FAN. Drawn locally (our QR + PDF), FIN from the record's own UIN. If it stops working after a Fayda redeploy, grab the fresh <b>next-action</b> hash from the site's OTP request (DevTools → Network) and paste it above — no redeploy needed.</div>
     <div class="muted" style="font-size:12px;margin-top:4px"><b>Server 5</b> uses the resident portal (16-digit FAN only) and spends <b>no App Check token</b>. It returns data rather than card images, so the QR and both cards are drawn locally — that needs Node.</div>
     <div class="muted" style="font-size:12px;margin-top:4px"><b>Proxy mode</b> runs the same native Server-4 flow as Server 4, but sends the Fayda traffic out through this proxy, so Fayda sees the <b>VPS IP</b> instead of this server's. Token-pool calls stay direct. Leave the URL empty and Proxy mode behaves exactly like Server 4.</div>
     <div class="row" style="margin-top:12px">
@@ -596,14 +613,14 @@ function renderCards(s){
   $("#cards").innerHTML=it.map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 }
 function renderBilling(s){
-  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy","server5","server6"].indexOf(s.mode)>=0?s.mode:"api";
+  const ms=$("#modeSel");if(ms&&document.activeElement!==ms)ms.value=["server4","proxy","server5","server6","server7","server8"].indexOf(s.mode)>=0?s.mode:"api";
   const bm=$("#botModes");
   if(bm&&Array.isArray(s.bots)){bm.innerHTML=s.bots.map(b=>{
     const label=(b.username?("@"+b.username):("bot "+b.id))+(b.primary?' <span class="tag">primary</span>':"");
     const opt=(v,t)=>`<option value="${v}"${(b.mode||"")===v?" selected":""}>${t}</option>`;
     return `<span class="row" style="gap:6px"><span class="muted" style="min-width:210px">${label}</span>`+
       `<select onchange='saveSet({bot_mode:{bot_id:${b.id},mode:this.value}})'>`+
-      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+opt("server5","Server 5 (resident portal)")+opt("server6","Server 6 (FaydaPass VC)")+
+      opt("","Global (follow above)")+opt("api","API (gateway)")+opt("server4","Server 4 (native)")+opt("proxy","Proxy (native via VPS IP)")+opt("server5","Server 5 (resident portal)")+opt("server6","Server 6 (FaydaPass VC)")+opt("server7","Server 7 (hosted API)")+opt("server8","Server 8 (Card Order)")+
       `</select>`+
       `<label class="chk" title="Server 5: allow EVERYONE on this bot to start a download by typing a FAN (PDF gets a generated, non-verifying QR)."><input type="checkbox" ${b.fan_flags&&b.fan_flags.all?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},which:"all",on:this.checked}})'> by-FAN: all</label>`+
       `<label class="chk" title="Server 5: allow only users you enabled in their Manage panel to type a FAN on this bot."><input type="checkbox" ${b.fan_flags&&b.fan_flags.peruser?"checked":""} onchange='saveSet({bot_fan:{bot_id:${b.id},which:"peruser",on:this.checked}})'> by-FAN: per-user</label></span>`;
@@ -613,7 +630,8 @@ function renderBilling(s){
   setv("#s4reg",s.s4_csrf_regular);setv("#s4vip",s.s4_csrf_vip);setv("#s4app",s.s4_appcheck);setv("#s4src",s.s4_token_source||"pool");
   {const cb=$("#s4spoof");if(cb)cb.checked=s.s4_ip_spoof!==false;}
   {const m=$("#bcViaMain");if(m)m.checked=!!s.broadcast_via_main;}
-  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);setv("#proxyUrl",s.relay_proxy_url);setv("#residentAuth",s.resident_basic_auth);
+  setv("#vpUrl",s.vp_base_url);setv("#vpKey",s.vp_api_key);setv("#proxyUrl",s.relay_proxy_url);setv("#residentAuth",s.resident_basic_auth);setv("#server7Key",s.server7_api_key);setv("#server8Action",s.server8_next_action);
+  {const x=$("#server7Render");if(x&&document.activeElement!==x)x.value=(s.server7_render==="json"?"json":"pdf");}
   {const c=$("#cardsStat");if(c){c.style.color=s.cards_ready?"#3aa657":"#d99a2b";
     c.textContent=s.cards_ready?"✔ card generator ready":("⚠ cards off — "+(s.cards_error||"Node missing")+" (PDF still works)")}}
   const g=$("#gprice"),v=$("#vprice"),np=$("#nprice");

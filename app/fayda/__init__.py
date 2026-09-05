@@ -13,6 +13,15 @@
               full VC issuance and parses the SD-JWT credential. Public PKCE
               client (no token, no secret). Accepts a 12-digit FIN or 16-digit
               FAN. English only.
+  'server7' — the otp.affiliate.pro.et hosted API. A third-party gateway does the
+              whole flow on its own reachable infrastructure and returns a finished
+              PDF; we only relay send-otp/verify-otp. No eSignet, no proxy, no local
+              render. x-api-key required (SERVER7_API_KEY). 16-digit FAN.
+  'server8' — the Card Order Portal (card-order.fayda.et), a Next.js app driven via
+              React Server Actions (RSC Flight stream). getToken/validateToken → mosip
+              identity + photo; we draw our own QR and render the PDF locally. FIN comes
+              from the response's UIN. 16-digit FAN only. The Next-Action hash breaks on
+              Fayda redeploys — admin-editable (`server8_next_action`).
 """
 from .. import config
 from ..repo import settings as settings_repo
@@ -20,8 +29,10 @@ from .api_provider import ApiProvider
 from .server4_provider import Server4Provider
 from .resident_provider import Server5Provider
 from .pass_provider import Server6Provider
+from .server7_provider import Server7Provider
+from .server8_provider import Server8Provider
 
-MODES = ("api", "server4", "proxy", "server5", "server6")
+MODES = ("api", "server4", "proxy", "server5", "server6", "server7", "server8")
 
 _providers = {}
 
@@ -36,6 +47,10 @@ def _make(mode: str):
         return Server5Provider()
     if mode == "server6":
         return Server6Provider()
+    if mode == "server7":
+        return Server7Provider()
+    if mode == "server8":
+        return Server8Provider()
     # 'proxy' is Server-4 with a different exit IP — same flow, same provider class.
     if mode in ("server4", "proxy"):
         return Server4Provider()

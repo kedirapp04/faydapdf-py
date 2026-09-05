@@ -116,6 +116,17 @@ RELAY_PROXY_URL = (os.getenv("RELAY_PROXY_URL") or "").strip()
 FAYDA_API_URL = (os.getenv("FAYDA_API_URL") or "").rstrip("/")
 FAYDA_API_KEY = (os.getenv("FAYDA_API_KEY") or "").strip()
 
+# Download mode 'server7': the otp.affiliate.pro.et hosted API (does the whole flow
+# itself and returns a finished PDF). Key required; set SERVER7_API_KEY to enable.
+SERVER7_API_URL = (os.getenv("SERVER7_API_URL") or "https://otp.affiliate.pro.et/api/v1").rstrip("/")
+SERVER7_API_KEY = (os.getenv("SERVER7_API_KEY") or "").strip()
+
+# Download mode 'server8': the Card Order Portal (card-order.fayda.et), a Next.js app
+# driven via React Server Actions. The Next-Action hash is baked into Fayda's build and
+# CHANGES on every redeploy — admin-settable (`server8_next_action`), env as the seed.
+SERVER8_BASE = (os.getenv("SERVER8_BASE") or "https://card-order.fayda.et").rstrip("/")
+SERVER8_NEXT_ACTION = (os.getenv("SERVER8_NEXT_ACTION") or "707d17603b46fdbaeb88f738d9882412097f92c7be").strip()
+
 SERVER4_TOKEN_API_URL = (os.getenv("SERVER4_TOKEN_API_URL") or "").strip()
 SERVER4_TOKEN_API_CSRF = (os.getenv("SERVER4_TOKEN_API_CSRF") or "").strip()
 SERVER4_TOKEN_MIN_SECONDS = _int("SERVER4_TOKEN_MIN_SECONDS", 90)

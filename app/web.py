@@ -183,6 +183,11 @@ async def api_stats():
     d["s4_ip_spoof"] = await _safe(settings_repo.get_bool("s4_ip_spoof", True), True)
     d["relay_proxy_url"] = await _safe(settings_repo.get("relay_proxy_url"), "") or ""
     d["resident_basic_auth"] = await _safe(settings_repo.get("resident_basic_auth"), "") or ""
+    from .fayda import server7_provider as _s7
+    d["server7_api_key"] = await _safe(_s7.api_key(), "") or ""
+    d["server7_render"] = await _safe(_s7.render_mode(), "pdf") or "pdf"
+    from .fayda import server8_provider as _s8
+    d["server8_next_action"] = await _safe(_s8.next_action(), "") or ""
     # Server 5 draws its own cards via Node; say so plainly rather than letting the
     # admin discover missing screenshots one download at a time.
     from .fayda import cards as _cards
@@ -949,6 +954,8 @@ async def api_settings(request: Request):
         await settings_repo.set_bool("free_mode", bool(body["free_mode"]))
     if "s5_qr_gen" in body:
         _v = str(body["s5_qr_gen"]); await settings_repo.set("s5_qr_gen", _v if _v in ("data","nosig","blank","unscannable") else "data")
+    if "server7_render" in body:
+        _v = str(body["server7_render"]).lower(); await settings_repo.set("server7_render", _v if _v in ("pdf","json") else "pdf")
     if "topup_bonus_enabled" in body:
         await billing.set_topup_bonus_enabled(bool(body["topup_bonus_enabled"]))
     if "topup_bonus_tiers" in body:
@@ -956,7 +963,8 @@ async def api_settings(request: Request):
     if "pdf_filename_suffix" in body:
         await settings_repo.set("pdf_filename_suffix", str(body["pdf_filename_suffix"] or "").strip())
     for _k in ("s4_csrf_regular", "s4_csrf_vip", "s4_appcheck", "s4_token_source",
-               "vp_base_url", "vp_api_key", "relay_proxy_url", "resident_basic_auth"):
+               "vp_base_url", "vp_api_key", "relay_proxy_url", "resident_basic_auth",
+               "server7_api_key", "server8_next_action"):
         if _k in body:
             await settings_repo.set(_k, str(body[_k] or "").strip())
     if "s4_ip_spoof" in body:
